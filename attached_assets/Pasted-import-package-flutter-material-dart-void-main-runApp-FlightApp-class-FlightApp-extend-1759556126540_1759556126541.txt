@@ -1,0 +1,73 @@
+import 'package:flutter/material.dart';
+
+void main() => runApp(FlightApp());
+
+class FlightApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: FlightScreen(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class FlightScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Flight Tracker"),
+        backgroundColor: Colors.blueAccent,
+      ),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Card(
+          elevation: 4,
+          child: Padding(
+            padding: EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("JFK", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                    Icon(Icons.flight_takeoff, size: 30),
+                    Text("LAX", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                SizedBox(height: 10),
+                Text("Flight AA123", style: TextStyle(fontSize: 18)),
+                SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Departure"),
+                        Text("10:00 AM"),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text("Arrival"),
+                        Text("1:30 PM"),
+                      ],
+                    ),
+                  ],
+                ),
+                SizedBox(height: 10),
+                LinearProgressIndicator(value: 0.6),
+                SizedBox(height: 10),
+                Text("On Time", style: TextStyle(color: Colors.green)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

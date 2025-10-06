@@ -1,0 +1,136 @@
+import 'package:flutter/material.dart';
+
+void main() {
+  runApp(FlightTrackerApp());
+}
+
+class FlightTrackerApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Flight Tracker',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: FlightDetailsScreen(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class FlightDetailsScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: Text('Flight Tracker'),
+        backgroundColor: Colors.blueAccent,
+        elevation: 0,
+      ),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Card(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 4,
+          child: Padding(
+            padding: EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Airports
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    AirportCode(code: "JFK", city: "New York"),
+                    Icon(Icons.flight, size: 32, color: Colors.blueAccent),
+                    AirportCode(code: "LAX", city: "Los Angeles"),
+                  ],
+                ),
+                SizedBox(height: 20),
+
+                // Flight number and airline
+                Text(
+                  "American Airlines • AA123",
+                  style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                ),
+
+                SizedBox(height: 20),
+
+                // Times
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    FlightTime(label: "Departure", time: "10:00 AM"),
+                    FlightTime(label: "Arrival", time: "1:30 PM"),
+                  ],
+                ),
+
+                SizedBox(height: 20),
+
+                // Progress bar
+                LinearProgressIndicator(
+                  value: 0.6,
+                  backgroundColor: Colors.grey[300],
+                  color: Colors.blueAccent,
+                  minHeight: 8,
+                ),
+
+                SizedBox(height: 20),
+
+                // Status
+                Text(
+                  "On Time",
+                  style: TextStyle(color: Colors.green, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class AirportCode extends StatelessWidget {
+  final String code;
+  final String city;
+
+  const AirportCode({required this.code, required this.city});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          code,
+          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+        ),
+        Text(
+          city,
+          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+        ),
+      ],
+    );
+  }
+}
+
+class FlightTime extends StatelessWidget {
+  final String label;
+  final String time;
+
+  const FlightTime({required this.label, required this.time});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(color: Colors.grey[600])),
+        Text(time, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+}
