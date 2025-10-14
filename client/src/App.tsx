@@ -1,59 +1,53 @@
+"use client";
+
 import { useState, useEffect } from "react";
-import { Switch, Route, useLocation, Redirect } from "wouter";
-import { queryClient } from "./lib/queryClient";
+import { Route, Switch, useLocation } from "wouter";
+import { AnimatePresence, motion } from "framer-motion";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./lib/queryClient";
 import { ToastProvider, ToastViewport } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Header } from "@/components/Header";
-import { BottomNav } from "@/components/BottomNav";
 import { SplashScreen } from "@/components/SplashScreen";
 import { useAuth } from "@/hooks/useAuth";
-import Landing from "@/pages/Landing";
+
+// Pages
+import GetStarted from "@/pages/GetStarted";
 import Register from "@/pages/Register";
 import Login from "@/pages/Login";
-import Profile from "@/pages/Dashboard";
-import Trips from "@/pages/Flights";
-import AddFlight from "@/pages/AddFlight";
-import FlightDetail from "@/pages/FlightDetail";
+import Dashboard from "@/pages/Dashboard";
+import TripHistory from "@/pages/TripHistory";
 import Admin from "@/pages/Admin";
-import PendingApproval from "@/pages/PendingApproval";
 import NotFound from "@/pages/not-found";
 
-function Router() {
-  const { isAuthenticated, user } = useAuth();
-  const [location, navigate] = useLocation();
+/* ===============================
+   🚏 ROUTER HANDLER
+   =============================== */
+function Router({ isAuthenticated }: { isAuthenticated: boolean }) {
+  const [, navigate] = useLocation();
 
-  // Redirect authenticated users away from auth pages
   useEffect(() => {
-    if (isAuthenticated && (location === '/login' || location === '/register')) {
-      navigate('/');
+    if (isAuthenticated) {
+      navigate("/dashboard");
     }
-  }, [isAuthenticated, location, navigate]);
-
-  if (isAuthenticated && user && !user.isAdmin) {
-    return (
-      <Switch>
-        <Route path="/" component={PendingApproval} />
-        <Route component={PendingApproval} />
-      </Switch>
-    );
-  }
+  }, [isAuthenticated, navigate]);
 
   return (
     <Switch>
-      {!isAuthenticated ? (
+      {!isAuthenticated && (
         <>
-          <Route path="/" component={Landing} />
+          <Route path="/" component={GetStarted} />
+          <Route path="/get-started" component={GetStarted} />
           <Route path="/register" component={Register} />
           <Route path="/login" component={Login} />
         </>
-      ) : (
+      )}
+      {isAuthenticated && (
         <>
-          <Route path="/" component={Profile} />
-          <Route path="/trips" component={Trips} />
-          <Route path="/add-flight" component={AddFlight} />
-          <Route path="/flight/:id" component={FlightDetail} />
+          <Route path="/" component={Dashboard} />
+          <Route path="/dashboard" component={Dashboard} />
+          <Route path="/trips" component={TripHistory} />
           <Route path="/admin" component={Admin} />
         </>
       )}
@@ -62,16 +56,82 @@ function Router() {
   );
 }
 
-function App() {
+/* ===============================
+   ⚙️ MAIN APP CONTENT
+   =============================== */
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [location] = useLocation();
+
+  // ⏳ While checking session
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-muted-foreground">
+        Checking session...
+      </div>
+    );
+  }
+
+  // 🧭 Logged-out view
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
+        <Router isAuthenticated={false} />
+      </div>
+    );
+  }
+
+  // 🧑‍🚀 Authenticated view
+  // Hide global header on specific pages (like Admin/Trips)
+  const hideGlobalUI = /^\/(admin|trips)/.test(location);
+
+  return (
+    <div className="min-h-screen bg-background pb-24 md:pb-0">
+      {!hideGlobalUI && <Header />} {/* ✅ Hide header on admin/trips */}
+      <main className="flex flex-col items-center w-full">
+        <Router isAuthenticated={true} />
+      </main>
+    </div>
+  );
+}
+
+/* ===============================
+   🚀 ROOT APP COMPONENT
+   =============================== */
+export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSplash(false), 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
           <ToastProvider>
-            {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
-            <AppContent />
+            <AnimatePresence mode="wait">
+              {showSplash ? (
+                <motion.div
+                  key="splash"
+                  initial={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.6 }}
+                >
+                  <SplashScreen onComplete={() => setShowSplash(false)} />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="app"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.6 }}
+                >
+                  <AppContent />
+                </motion.div>
+              )}
+            </AnimatePresence>
             <ToastViewport />
           </ToastProvider>
         </TooltipProvider>
@@ -79,43 +139,3 @@ function App() {
     </QueryClientProvider>
   );
 }
-
-
-function AppContent() {
-  const { isAuthenticated, isLoading, user } = useAuth();
-  const [location, navigate] = useLocation();
-  
-  // Check mobile status using matchMedia (works in Replit preview and actual devices)
-  const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
-  const shouldRedirectToLogin = !isLoading && !isAuthenticated && isMobile && location === '/';
-
-  useEffect(() => {
-    if (shouldRedirectToLogin) {
-      navigate('/login');
-    }
-  }, [shouldRedirectToLogin, navigate]);
-
-  if (isLoading || shouldRedirectToLogin) {
-    return null;
-  }
-
-  if (!isAuthenticated) {
-    return <Router />;
-  }
-
-  // For non-admin users, show only PendingApproval without navigation
-  if (user && !user.isAdmin) {
-    return <Router />;
-  }
-
-  // For admin users, show full navigation
-  return (
-    <div className="min-h-screen bg-background pb-24 md:pb-0">
-      <Header />
-      <Router />
-      <BottomNav />
-    </div>
-  );
-}
-
-export default App;

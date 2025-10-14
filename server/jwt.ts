@@ -1,23 +1,19 @@
-import jwt from "jsonwebtoken";
+import jwt, { JwtPayload } from "jsonwebtoken";
 
-const JWT_SECRET = process.env.SESSION_SECRET || "fallback-jwt-secret";
-const JWT_EXPIRES_IN = "7d"; // 7 days
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET;
 
-export interface JWTPayload {
-  userId: string;
-  email: string;
-  username: string;
+if (!JWT_SECRET) {
+  throw new Error("❌ Missing JWT_SECRET or SESSION_SECRET in environment variables.");
 }
 
-export function signToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+export function createToken(payload: object): string {
+  return jwt.sign(payload, JWT_SECRET as jwt.Secret, { expiresIn: "7d" });
 }
 
-export function verifyToken(token: string): JWTPayload | null {
+export function verifyToken(token: string): JwtPayload | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
-    return decoded;
-  } catch (error) {
+    return jwt.verify(token, JWT_SECRET as jwt.Secret) as JwtPayload;
+  } catch {
     return null;
   }
 }

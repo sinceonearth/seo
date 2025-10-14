@@ -1,150 +1,140 @@
-import {
-  users,
-  flights,
-  airlines,
-  type User,
-  type UpsertUser,
-  type Flight,
-  type InsertFlight,
-  type InsertUser,
-  type Airline,
-} from "@shared/schema";
-import { db } from "./db";
-import { eq, and, desc, or } from "drizzle-orm";
+import { Pool } from "pg";
 
-export interface IStorage {
-  // User operations
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsernameOrEmail(usernameOrEmail: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  upsertUser(user: UpsertUser): Promise<User>;
-  getAllUsers(): Promise<User[]>;
-  
-  // Flight operations
-  getUserFlights(userId: string): Promise<Flight[]>;
-  getFlight(id: string): Promise<Flight | undefined>;
-  createFlight(flight: InsertFlight): Promise<Flight>;
-  updateFlight(id: string, flight: Partial<InsertFlight>): Promise<Flight>;
-  deleteFlight(id: string): Promise<void>;
-  createFlightsBulk(flights: InsertFlight[]): Promise<Flight[]>;
-  
-  // Airline operations
-  getAllAirlines(): Promise<Airline[]>;
-  
-  // Admin operations
-  getAdminStats(): Promise<{
-    totalUsers: number;
-    totalFlights: number;
-    totalAirlines: number;
-    totalAirports: number;
-  }>;
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+
+export interface UserInput {
+  username: string;
+  email: string;
+  passwordHash: string;
+  name: string;
+  country?: string | null;
+  alien?: string;
 }
 
-export class DatabaseStorage implements IStorage {
-  // User operations
-  async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
-  }
+export interface FlightInput {
+  userId: string;
+  airlineName: string;
+  flightNumber: string;
+  departure: string;
+  arrival: string;
+  departureLatitude?: number | null;
+  departureLongitude?: number | null;
+  arrivalLatitude?: number | null;
+  arrivalLongitude?: number | null;
+  date: string;
+  departureTime?: string | null;
+  arrivalTime?: string | null;
+  aircraftType?: string | null;
+  distance?: number;
+  duration?: string | null;
+  status?: string;
+}
 
-  async getUserByUsernameOrEmail(usernameOrEmail: string): Promise<User | undefined> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(
-        or(eq(users.username, usernameOrEmail), eq(users.email, usernameOrEmail))
+export const storage = {
+  /* ===============================
+     👤 Users
+     =============================== */
+  async getUserByUsernameOrEmail(identifier: string) {
+    const result = await pool.query(
+      `SELECT * FROM users WHERE username = $1 OR email = $1`,
+      [identifier]
+    );
+    return result.rows[0];
+  },
+
+  async getUser(id: string) {
+    const result = await pool.query(
+      `SELECT id, username, email, name, country, alien, is_admin AS "isAdmin", created_at AS "createdAt"
+       FROM users
+       WHERE id = $1`,
+      [id]
+    );
+    return result.rows[0];
+  },
+
+  async getAllUsers() {
+    const result = await pool.query(`SELECT * FROM users ORDER BY id ASC`);
+    return result.rows;
+  },
+
+  async createUser({ username, email, passwordHash, name, country }: UserInput) {
+    // Use a transaction to safely assign next alien
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Get max current alien value
+      const res = await client.query(`SELECT MAX(alien) AS maxAlien FROM users`);
+      const maxAlien = res.rows[0]?.maxalien || "00";
+      let nextAlienNumber = parseInt(maxAlien, 10) + 1;
+
+      // Limit to 99
+      if (nextAlienNumber > 99) throw new Error("Maximum number of users reached");
+
+      const alienStr = String(nextAlienNumber).padStart(2, "0");
+
+      const insertRes = await client.query(
+        `INSERT INTO users (username, email, password_hash, name, country, alien)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [username, email, passwordHash, name, country || null, alienStr]
       );
-    return user;
-  }
 
-  async createUser(userData: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(userData).returning();
-    return user;
-  }
+      await client.query("COMMIT");
+      return insertRes.rows[0];
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
 
-  async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    return user;
-  }
+  /* ===============================
+     ✈️ Flights
+     =============================== */
+  async getUserFlights(userId: string) {
+    const result = await pool.query(
+      `SELECT *
+       FROM flights
+       WHERE user_id = $1
+       ORDER BY date DESC`,
+      [userId]
+    );
+    return result.rows;
+  },
 
-  // Flight operations
-  async getUserFlights(userId: string): Promise<Flight[]> {
-    return db
-      .select()
-      .from(flights)
-      .where(eq(flights.userId, userId))
-      .orderBy(desc(flights.date));
-  }
-
-  async getFlight(id: string): Promise<Flight | undefined> {
-    const [flight] = await db.select().from(flights).where(eq(flights.id, id));
-    return flight;
-  }
-
-  async createFlight(flightData: InsertFlight): Promise<Flight> {
-    const [flight] = await db.insert(flights).values(flightData).returning();
-    return flight;
-  }
-
-  async updateFlight(id: string, flightData: Partial<InsertFlight>): Promise<Flight> {
-    const [flight] = await db
-      .update(flights)
-      .set(flightData)
-      .where(eq(flights.id, id))
-      .returning();
-    return flight;
-  }
-
-  async deleteFlight(id: string): Promise<void> {
-    await db.delete(flights).where(eq(flights.id, id));
-  }
-
-  async createFlightsBulk(flightData: InsertFlight[]): Promise<Flight[]> {
-    return db.insert(flights).values(flightData).returning();
-  }
-
-  // Airline operations
-  async getAllAirlines(): Promise<Airline[]> {
-    return db.select().from(airlines).orderBy(airlines.name);
-  }
-
-  // Admin operations
-  async getAllUsers(): Promise<User[]> {
-    return db.select().from(users);
-  }
-
-  async getAdminStats(): Promise<{
-    totalUsers: number;
-    totalFlights: number;
-    totalAirlines: number;
-    totalAirports: number;
-  }> {
-    const allUsers = await db.select().from(users);
-    const allFlights = await db.select().from(flights);
-    
-    const uniqueAirlines = new Set(allFlights.map(f => f.airline));
-    const uniqueAirports = new Set([
-      ...allFlights.map(f => f.from),
-      ...allFlights.map(f => f.to)
-    ]);
-
-    return {
-      totalUsers: allUsers.length,
-      totalFlights: allFlights.length,
-      totalAirlines: uniqueAirlines.size,
-      totalAirports: uniqueAirports.size,
-    };
-  }
-}
-
-export const storage = new DatabaseStorage();
+  async createFlight(flight: FlightInput) {
+    const result = await pool.query(
+      `INSERT INTO flights (
+         user_id, airline_name, flight_number, departure, arrival,
+         departure_latitude, departure_longitude, arrival_latitude, arrival_longitude,
+         date, departure_time, arrival_time, aircraft_type, distance, duration, status
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       RETURNING *`,
+      [
+        flight.userId,
+        flight.airlineName,
+        flight.flightNumber,
+        flight.departure,
+        flight.arrival,
+        flight.departureLatitude ?? null,
+        flight.departureLongitude ?? null,
+        flight.arrivalLatitude ?? null,
+        flight.arrivalLongitude ?? null,
+        flight.date,
+        flight.departureTime ?? null,
+        flight.arrivalTime ?? null,
+        flight.aircraftType ?? null,
+        flight.distance ?? 0,
+        flight.duration ?? null,
+        flight.status ?? "scheduled",
+      ]
+    );
+    return result.rows[0];
+  },
+};

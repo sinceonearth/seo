@@ -1,64 +1,143 @@
+import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
-import type { RequestHandler } from "express";
-import { verifyToken } from "./jwt";
+import { storage } from "./storage";
+import { createToken } from "./jwt";
+import type { RequestWithUser } from "./routes"; // adjust path if needed
+import { requireAuth } from "./routes"; // make sure this is exported from routes.ts
 
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10);
-}
+const router = Router();
 
-export async function verifyPassword(
-  password: string,
-  hash: string
-): Promise<boolean> {
-  return bcrypt.compare(password, hash);
-}
+/* ===============================
+   🧾 REGISTER
+   =============================== */
+router.post("/register", async (req: Request, res: Response) => {
+  try {
+    const { name, username, email, password, country } = req.body as {
+      name?: string;
+      username?: string;
+      email?: string;
+      password?: string;
+      country?: string | null;
+    };
 
-export const requireAuth: RequestHandler = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!name || !username || !email || !password) {
+      return res.status(400).json({ message: "All fields required" });
+    }
+
+    const existingUser = await storage.getUserByUsernameOrEmail(email);
+    if (existingUser) {
+      return res.status(409).json({ message: "Email already registered" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const newUser = await storage.createUser({
+      name,
+      username,
+      email,
+      passwordHash,
+      country: country || null,
+    });
+
+    const token = createToken({
+      userId: newUser.id,
+      email: newUser.email,
+      username: newUser.username,
+      isAdmin: !!newUser.is_admin,
+      alien: newUser.alien,
+      country: newUser.country, // <-- include country in JWT
+    });
+
+    return res.status(201).json({
+      message: "Registration successful",
+      token,
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        username: newUser.username,
+        country: newUser.country,
+        alien: newUser.alien,
+        is_admin: !!newUser.is_admin,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Register error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===============================
+   🔐 LOGIN
+   =============================== */
+router.post("/login", async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body as {
+      email?: string;
+      password?: string;
+    };
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password required" });
+    }
+
+    const user = await storage.getUserByUsernameOrEmail(email);
+    if (!user || !user.password_hash) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const isValid = await bcrypt.compare(password, user.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const token = createToken({
+      userId: user.id,
+      email: user.email,
+      username: user.username,
+      isAdmin: !!user.is_admin,
+      alien: user.alien,
+      country: user.country, // <-- include country in JWT
+    });
+
+    return res.json({
+      message: "Login successful",
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        country: user.country,
+        alien: user.alien,
+        is_admin: !!user.is_admin,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Login error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===============================
+   🙋 GET AUTHENTICATED USER
+   =============================== */
+router.get("/user", requireAuth, (req: RequestWithUser, res: Response) => {
+  const user = req.user;
+
+  if (!user) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  
-  const token = authHeader.substring(7); // Remove "Bearer " prefix
-  const payload = verifyToken(token);
-  
-  if (!payload) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  
-  // Attach user info to request for downstream use
-  (req as any).userId = payload.userId;
-  (req as any).userEmail = payload.email;
-  (req as any).username = payload.username;
-  
-  next();
-};
 
-export const requireAdmin: RequestHandler = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  
-  const token = authHeader.substring(7);
-  const payload = verifyToken(token);
-  
-  if (!payload) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  
-  const { storage } = await import("./storage");
-  const user = await storage.getUser(payload.userId);
-  
-  if (!user || !user.isAdmin) {
-    return res.status(403).json({ message: "Forbidden - Admin access required" });
-  }
-  
-  (req as any).userId = payload.userId;
-  (req as any).userEmail = payload.email;
-  (req as any).username = payload.username;
-  
-  next();
-};
+  res.json({
+    id: user.userId,
+    email: user.email,
+    username: user.username,
+    country: user.country ?? null, // <-- now included
+    alien: user.alien,
+    is_admin: user.isAdmin ?? false,
+  });
+});
+
+/* ===============================
+   Default Export
+=============================== */
+export default router;

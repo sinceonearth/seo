@@ -1,547 +1,511 @@
 var __defProp = Object.defineProperty;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// shared/schema.ts
-var schema_exports = {};
-__export(schema_exports, {
-  airlines: () => airlines,
-  flights: () => flights,
-  insertAirlineSchema: () => insertAirlineSchema,
-  insertFlightSchema: () => insertFlightSchema,
-  insertUserSchema: () => insertUserSchema,
-  loginUserSchema: () => loginUserSchema,
-  registerUserSchema: () => registerUserSchema,
-  sessions: () => sessions,
-  users: () => users
-});
-import { sql } from "drizzle-orm";
-import {
-  index,
-  jsonb,
-  pgTable,
-  timestamp,
-  varchar,
-  boolean
-} from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
-var sessions, users, insertUserSchema, registerUserSchema, loginUserSchema, flights, insertFlightSchema, airlines, insertAirlineSchema;
-var init_schema = __esm({
-  "shared/schema.ts"() {
-    "use strict";
-    sessions = pgTable(
-      "sessions",
-      {
-        sid: varchar("sid").primaryKey(),
-        sess: jsonb("sess").notNull(),
-        expire: timestamp("expire").notNull()
-      },
-      (table) => [index("IDX_session_expire").on(table.expire)]
-    );
-    users = pgTable("users", {
-      id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-      username: varchar("username").unique().notNull(),
-      email: varchar("email").unique().notNull(),
-      passwordHash: varchar("password_hash"),
-      name: varchar("name").notNull(),
-      country: varchar("country"),
-      profileImageUrl: varchar("profile_image_url"),
-      isAdmin: boolean("is_admin").default(false).notNull(),
-      createdAt: timestamp("created_at").defaultNow(),
-      updatedAt: timestamp("updated_at").defaultNow()
-    });
-    insertUserSchema = createInsertSchema(users).omit({
-      id: true,
-      createdAt: true,
-      updatedAt: true
-    });
-    registerUserSchema = z.object({
-      username: z.string().min(3).max(30),
-      email: z.string().email(),
-      password: z.string().min(8),
-      name: z.string().min(1),
-      country: z.string().min(1)
-    });
-    loginUserSchema = z.object({
-      usernameOrEmail: z.string().min(1),
-      password: z.string().min(1)
-    });
-    flights = pgTable(
-      "flights",
-      {
-        id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-        userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-        date: varchar("date").notNull(),
-        airline: varchar("airline").notNull(),
-        airlineName: varchar("airline_name"),
-        flightNumber: varchar("flight_number").notNull(),
-        from: varchar("from").notNull(),
-        to: varchar("to").notNull(),
-        departureTime: varchar("departure_time"),
-        arrivalTime: varchar("arrival_time"),
-        departureTerminal: varchar("departure_terminal"),
-        arrivalTerminal: varchar("arrival_terminal"),
-        aircraftType: varchar("aircraft_type"),
-        status: varchar("status").notNull().default("completed"),
-        createdAt: timestamp("created_at").defaultNow()
-      },
-      (table) => [
-        index("idx_flights_user_id").on(table.userId),
-        index("idx_flights_date").on(table.date)
-      ]
-    );
-    insertFlightSchema = createInsertSchema(flights).omit({
-      id: true,
-      createdAt: true
-    });
-    airlines = pgTable("airlines", {
-      code: varchar("code", { length: 2 }).primaryKey(),
-      icao: varchar("icao", { length: 3 }),
-      name: varchar("name").notNull(),
-      country: varchar("country").notNull()
-    });
-    insertAirlineSchema = createInsertSchema(airlines);
-  }
-});
-
-// server/db.ts
-import { drizzle } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
-import { config } from "dotenv";
-var databaseUrl, cleanedUrl, sql2, db;
-var init_db = __esm({
-  "server/db.ts"() {
-    "use strict";
-    init_schema();
-    config();
-    databaseUrl = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL;
-    if (!databaseUrl) {
-      throw new Error("Database URL not set. Please set NEON_DATABASE_URL or DATABASE_URL environment variable");
-    }
-    if (!databaseUrl.startsWith("postgresql://") && !databaseUrl.startsWith("postgres://")) {
-      throw new Error(`Invalid database URL format: ${databaseUrl.substring(0, 50)}...`);
-    }
-    cleanedUrl = databaseUrl;
-    if (cleanedUrl.includes("channel_binding=require")) {
-      cleanedUrl = cleanedUrl.replace("&channel_binding=require", "").replace("?channel_binding=require", "");
-    }
-    sql2 = neon(cleanedUrl);
-    db = drizzle(sql2, { schema: schema_exports });
-  }
-});
-
-// server/storage.ts
-var storage_exports = {};
-__export(storage_exports, {
-  DatabaseStorage: () => DatabaseStorage,
-  storage: () => storage
-});
-import { eq, desc, or } from "drizzle-orm";
-var DatabaseStorage, storage;
-var init_storage = __esm({
-  "server/storage.ts"() {
-    "use strict";
-    init_schema();
-    init_db();
-    DatabaseStorage = class {
-      // User operations
-      async getUser(id) {
-        const [user] = await db.select().from(users).where(eq(users.id, id));
-        return user;
-      }
-      async getUserByUsernameOrEmail(usernameOrEmail) {
-        const [user] = await db.select().from(users).where(
-          or(eq(users.username, usernameOrEmail), eq(users.email, usernameOrEmail))
-        );
-        return user;
-      }
-      async createUser(userData) {
-        const [user] = await db.insert(users).values(userData).returning();
-        return user;
-      }
-      async upsertUser(userData) {
-        const [user] = await db.insert(users).values(userData).onConflictDoUpdate({
-          target: users.id,
-          set: {
-            ...userData,
-            updatedAt: /* @__PURE__ */ new Date()
-          }
-        }).returning();
-        return user;
-      }
-      // Flight operations
-      async getUserFlights(userId) {
-        return db.select().from(flights).where(eq(flights.userId, userId)).orderBy(desc(flights.date));
-      }
-      async getFlight(id) {
-        const [flight] = await db.select().from(flights).where(eq(flights.id, id));
-        return flight;
-      }
-      async createFlight(flightData) {
-        const [flight] = await db.insert(flights).values(flightData).returning();
-        return flight;
-      }
-      async updateFlight(id, flightData) {
-        const [flight] = await db.update(flights).set(flightData).where(eq(flights.id, id)).returning();
-        return flight;
-      }
-      async deleteFlight(id) {
-        await db.delete(flights).where(eq(flights.id, id));
-      }
-      async createFlightsBulk(flightData) {
-        return db.insert(flights).values(flightData).returning();
-      }
-      // Airline operations
-      async getAllAirlines() {
-        return db.select().from(airlines).orderBy(airlines.name);
-      }
-      // Admin operations
-      async getAllUsers() {
-        return db.select().from(users);
-      }
-      async getAdminStats() {
-        const allUsers = await db.select().from(users);
-        const allFlights = await db.select().from(flights);
-        const uniqueAirlines = new Set(allFlights.map((f) => f.airline));
-        const uniqueAirports = /* @__PURE__ */ new Set([
-          ...allFlights.map((f) => f.from),
-          ...allFlights.map((f) => f.to)
-        ]);
-        return {
-          totalUsers: allUsers.length,
-          totalFlights: allFlights.length,
-          totalAirlines: uniqueAirlines.size,
-          totalAirports: uniqueAirports.size
-        };
-      }
-    };
-    storage = new DatabaseStorage();
-  }
-});
-
 // server/index.ts
-import dotenv from "dotenv";
+import dotenv2 from "dotenv";
 import express2 from "express";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 
 // server/routes.ts
-init_storage();
 import { createServer } from "http";
+import dotenv from "dotenv";
+import { sql as sql2, eq, desc, and, or } from "drizzle-orm";
+
+// server/db.ts
+import "dotenv/config";
+import { drizzle } from "drizzle-orm/neon-http";
+import { neon } from "@neondatabase/serverless";
+
+// shared/schema.ts
+var schema_exports = {};
+__export(schema_exports, {
+  airlines: () => airlines,
+  airports: () => airports,
+  flights: () => flights,
+  insertAirlineSchema: () => insertAirlineSchema,
+  insertAirportSchema: () => insertAirportSchema,
+  insertFlightSchema: () => insertFlightSchema,
+  insertStampSchema: () => insertStampSchema,
+  insertUserSchema: () => insertUserSchema,
+  loginUserSchema: () => loginUserSchema,
+  registerUserSchema: () => registerUserSchema,
+  sessions: () => sessions,
+  stamps: () => stamps,
+  users: () => users
+});
+import {
+  pgTable,
+  uuid,
+  varchar,
+  text,
+  jsonb,
+  boolean,
+  timestamp,
+  doublePrecision,
+  integer,
+  index
+} from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+var sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull()
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)]
+);
+var users = pgTable("users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  alien: varchar("alien").unique().notNull(),
+  // 👽 “A01”, “A02”, etc.
+  username: varchar("username").unique().notNull(),
+  email: varchar("email").unique().notNull(),
+  password_hash: varchar("password_hash"),
+  name: varchar("name").notNull(),
+  country: varchar("country"),
+  profile_image_url: varchar("profile_image_url"),
+  is_admin: boolean("is_admin").default(false).notNull(),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow()
+});
+var insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  created_at: true,
+  updated_at: true
+});
+var registerUserSchema = z.object({
+  name: z.string().min(2, "Name is required"),
+  username: z.string().min(3, "Username must be at least 3 characters").regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  country: z.string().optional(),
+  // 👽 Include alien_id for client compatibility
+  alien: z.string().regex(/^\d{2}$/, "Alien must be 2 digits (e.g. 01, 02, 10)").optional()
+});
+var loginUserSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters")
+});
+var flights = pgTable("flights", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  user_id: uuid("user_id").references(() => users.id).notNull(),
+  // 🏢 Airline info
+  airline_name: varchar("airline_name").notNull(),
+  airline_code: varchar("airline_code", { length: 3 }).notNull(),
+  flight_number: varchar("flight_number").notNull(),
+  // 🌍 Route
+  departure: varchar("departure").notNull(),
+  arrival: varchar("arrival").notNull(),
+  // 📍 Coordinates
+  departure_latitude: doublePrecision("departure_latitude"),
+  departure_longitude: doublePrecision("departure_longitude"),
+  arrival_latitude: doublePrecision("arrival_latitude"),
+  arrival_longitude: doublePrecision("arrival_longitude"),
+  // 🕐 Timing
+  departure_time: varchar("departure_time"),
+  arrival_time: varchar("arrival_time"),
+  date: varchar("date"),
+  // YYYY-MM-DD
+  // ✈️ Aircraft & stats
+  aircraft_type: varchar("aircraft_type"),
+  distance: doublePrecision("distance"),
+  // km
+  duration: varchar("duration"),
+  status: varchar("status").default("scheduled"),
+  created_at: timestamp("created_at").defaultNow()
+});
+var insertFlightSchema = createInsertSchema(flights).omit({
+  id: true,
+  user_id: true,
+  created_at: true
+});
+var airlines = pgTable("airlines", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  airline_code: varchar("airline_code", { length: 3 }).unique().notNull(),
+  airline_name: varchar("airline_name").notNull(),
+  country: varchar("country").notNull()
+});
+var insertAirlineSchema = createInsertSchema(airlines);
+var airports = pgTable("airports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ident: varchar("ident").unique().notNull(),
+  type: varchar("type"),
+  name: varchar("name"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  elevation_ft: integer("elevation_ft"),
+  continent: varchar("continent"),
+  iso_country: varchar("iso_country"),
+  iso_region: varchar("iso_region"),
+  municipality: varchar("municipality"),
+  gps_code: varchar("gps_code"),
+  iata: varchar("iata", { length: 3 }),
+  icao: varchar("icao", { length: 4 }),
+  local_code: varchar("local_code")
+});
+var insertAirportSchema = createInsertSchema(airports);
+var stamps = pgTable("stamps", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  image_url: text("image_url").notNull(),
+  created_at: timestamp("created_at").defaultNow()
+});
+var insertStampSchema = createInsertSchema(stamps).omit({
+  id: true,
+  created_at: true
+});
+
+// server/db.ts
+import { config } from "dotenv";
+config();
+var databaseUrl = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL;
+if (!databaseUrl) {
+  throw new Error(
+    "Database URL not set. Please set NEON_DATABASE_URL or DATABASE_URL environment variable."
+  );
+}
+if (!databaseUrl.startsWith("postgresql://") && !databaseUrl.startsWith("postgres://")) {
+  throw new Error(
+    `Invalid database URL format: ${databaseUrl.substring(0, 50)}...`
+  );
+}
+var cleanedUrl = databaseUrl.replace(/([&?])channel_binding=require/, "");
+var sql = neon(cleanedUrl);
+var db = drizzle(sql, { schema: schema_exports });
+
+// server/storage.ts
+import { Pool } from "pg";
+var pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+var storage = {
+  /* ===============================
+     👤 Users
+     =============================== */
+  async getUserByUsernameOrEmail(identifier) {
+    const result = await pool.query(
+      `SELECT * FROM users WHERE username = $1 OR email = $1`,
+      [identifier]
+    );
+    return result.rows[0];
+  },
+  async getUser(id) {
+    const result = await pool.query(
+      `SELECT id, username, email, name, country, alien, is_admin AS "isAdmin", created_at AS "createdAt"
+       FROM users
+       WHERE id = $1`,
+      [id]
+    );
+    return result.rows[0];
+  },
+  async getAllUsers() {
+    const result = await pool.query(`SELECT * FROM users ORDER BY id ASC`);
+    return result.rows;
+  },
+  async createUser({ username, email, passwordHash, name, country }) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const res = await client.query(`SELECT MAX(alien) AS maxAlien FROM users`);
+      const maxAlien = res.rows[0]?.maxalien || "00";
+      let nextAlienNumber = parseInt(maxAlien, 10) + 1;
+      if (nextAlienNumber > 99) throw new Error("Maximum number of users reached");
+      const alienStr = String(nextAlienNumber).padStart(2, "0");
+      const insertRes = await client.query(
+        `INSERT INTO users (username, email, password_hash, name, country, alien)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [username, email, passwordHash, name, country || null, alienStr]
+      );
+      await client.query("COMMIT");
+      return insertRes.rows[0];
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+  /* ===============================
+     ✈️ Flights
+     =============================== */
+  async getUserFlights(userId) {
+    const result = await pool.query(
+      `SELECT *
+       FROM flights
+       WHERE user_id = $1
+       ORDER BY date DESC`,
+      [userId]
+    );
+    return result.rows;
+  },
+  async createFlight(flight) {
+    const result = await pool.query(
+      `INSERT INTO flights (
+         user_id, airline_name, flight_number, departure, arrival,
+         departure_latitude, departure_longitude, arrival_latitude, arrival_longitude,
+         date, departure_time, arrival_time, aircraft_type, distance, duration, status
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       RETURNING *`,
+      [
+        flight.userId,
+        flight.airlineName,
+        flight.flightNumber,
+        flight.departure,
+        flight.arrival,
+        flight.departureLatitude ?? null,
+        flight.departureLongitude ?? null,
+        flight.arrivalLatitude ?? null,
+        flight.arrivalLongitude ?? null,
+        flight.date,
+        flight.departureTime ?? null,
+        flight.arrivalTime ?? null,
+        flight.aircraftType ?? null,
+        flight.distance ?? 0,
+        flight.duration ?? null,
+        flight.status ?? "scheduled"
+      ]
+    );
+    return result.rows[0];
+  }
+};
 
 // server/auth.ts
+import { Router } from "express";
 import bcrypt from "bcryptjs";
 
 // server/jwt.ts
 import jwt from "jsonwebtoken";
-var JWT_SECRET = process.env.SESSION_SECRET || "fallback-jwt-secret";
-var JWT_EXPIRES_IN = "7d";
-function signToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+var JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET;
+if (!JWT_SECRET) {
+  throw new Error("\u274C Missing JWT_SECRET or SESSION_SECRET in environment variables.");
+}
+function createToken(payload) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 }
 function verifyToken(token) {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    return decoded;
-  } catch (error) {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
     return null;
   }
 }
 
 // server/auth.ts
-async function hashPassword(password) {
-  return bcrypt.hash(password, 10);
-}
-async function verifyPassword(password, hash) {
-  return bcrypt.compare(password, hash);
-}
-var requireAuth = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Unauthorized" });
+var router = Router();
+router.post("/register", async (req, res) => {
+  try {
+    const { name, username, email, password, country } = req.body;
+    if (!name || !username || !email || !password) {
+      return res.status(400).json({ message: "All fields required" });
+    }
+    const existingUser = await storage.getUserByUsernameOrEmail(email);
+    if (existingUser) {
+      return res.status(409).json({ message: "Email already registered" });
+    }
+    const passwordHash = await bcrypt.hash(password, 10);
+    const newUser = await storage.createUser({
+      name,
+      username,
+      email,
+      passwordHash,
+      country: country || null
+    });
+    const token = createToken({
+      userId: newUser.id,
+      email: newUser.email,
+      username: newUser.username,
+      isAdmin: !!newUser.is_admin,
+      alien: newUser.alien
+    });
+    return res.status(201).json({
+      message: "Registration successful",
+      token,
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        username: newUser.username,
+        country: newUser.country,
+        alien: newUser.alien,
+        is_admin: !!newUser.is_admin
+      }
+    });
+  } catch (err) {
+    console.error("\u274C Register error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
-  const token = authHeader.substring(7);
-  const payload = verifyToken(token);
-  if (!payload) {
-    return res.status(401).json({ message: "Unauthorized" });
+});
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password required" });
+    }
+    const user = await storage.getUserByUsernameOrEmail(email);
+    if (!user || !user.password_hash) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+    const token = createToken({
+      userId: user.id,
+      email: user.email,
+      username: user.username,
+      isAdmin: !!user.is_admin,
+      alien: user.alien
+    });
+    return res.json({
+      message: "Login successful",
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        country: user.country,
+        alien: user.alien,
+        is_admin: !!user.is_admin
+      }
+    });
+  } catch (err) {
+    console.error("\u274C Login error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
-  req.userId = payload.userId;
-  req.userEmail = payload.email;
-  req.username = payload.username;
-  next();
-};
-var requireAdmin = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  const token = authHeader.substring(7);
-  const payload = verifyToken(token);
-  if (!payload) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  const { storage: storage2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
-  const user = await storage2.getUser(payload.userId);
-  if (!user || !user.isAdmin) {
-    return res.status(403).json({ message: "Forbidden - Admin access required" });
-  }
-  req.userId = payload.userId;
-  req.userEmail = payload.email;
-  req.username = payload.username;
-  next();
-};
+});
+var auth_default = router;
 
 // server/routes.ts
-init_schema();
+dotenv.config();
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ message: "Missing Authorization header" });
+  }
+  const token = authHeader.split(" ")[1];
+  const decoded = verifyToken(token);
+  if (!decoded) {
+    return res.status(401).json({ message: "Invalid or expired token" });
+  }
+  req.user = decoded;
+  next();
+}
+function requireAdmin(req, res, next) {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ message: "Admins only" });
+  }
+  next();
+}
 async function registerRoutes(app2) {
-  app2.post("/api/auth/register", async (req, res) => {
+  app2.use("/api/auth", auth_default);
+  app2.get("/api/admin/users", requireAuth, requireAdmin, async (_req, res) => {
     try {
-      const validated = registerUserSchema.parse(req.body);
-      const existingUser = await storage.getUserByUsernameOrEmail(validated.username);
-      if (existingUser) {
-        return res.status(400).json({ message: "Username or email already exists" });
-      }
-      const emailCheck = await storage.getUserByUsernameOrEmail(validated.email);
-      if (emailCheck) {
-        return res.status(400).json({ message: "Email already exists" });
-      }
-      const passwordHash = await hashPassword(validated.password);
-      const user = await storage.createUser({
-        username: validated.username,
-        email: validated.email,
-        passwordHash,
-        name: validated.name,
-        country: validated.country
-      });
-      const token = signToken({
-        userId: user.id,
-        email: user.email,
-        username: user.username
-      });
-      const { passwordHash: _, ...userWithoutPassword } = user;
-      res.json({ ...userWithoutPassword, token });
+      const usersList = await storage.getAllUsers();
+      res.json(usersList.map(({ password_hash, ...u }) => u));
     } catch (error) {
-      console.error("Registration error:", error);
-      res.status(400).json({ message: "Registration failed" });
-    }
-  });
-  app2.post("/api/auth/login", async (req, res) => {
-    try {
-      const validated = loginUserSchema.parse(req.body);
-      const user = await storage.getUserByUsernameOrEmail(validated.usernameOrEmail);
-      if (!user || !user.passwordHash) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-      const isValid = await verifyPassword(validated.password, user.passwordHash);
-      if (!isValid) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-      const token = signToken({
-        userId: user.id,
-        email: user.email,
-        username: user.username
-      });
-      const { passwordHash: _, ...userWithoutPassword } = user;
-      res.json({ ...userWithoutPassword, token });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(401).json({ message: "Login failed" });
-    }
-  });
-  app2.post("/api/auth/logout", (req, res) => {
-    res.json({ success: true });
-  });
-  app2.get("/api/auth/user", requireAuth, async (req, res) => {
-    try {
-      const userId = req.userId;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      const { passwordHash: _, ...userWithoutPassword } = user;
-      res.json(userWithoutPassword);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
-  app2.get("/api/admin/users", requireAdmin, async (req, res) => {
-    try {
-      const users2 = await storage.getAllUsers();
-      const usersWithoutPasswords = users2.map(({ passwordHash: _, ...user }) => user);
-      res.json(usersWithoutPasswords);
-    } catch (error) {
-      console.error("Error fetching users:", error);
+      console.error("\u274C Error fetching users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
-    }
-  });
-  app2.get("/api/admin/stats", requireAdmin, async (req, res) => {
-    try {
-      const stats = await storage.getAdminStats();
-      res.json(stats);
-    } catch (error) {
-      console.error("Error fetching admin stats:", error);
-      res.status(500).json({ message: "Failed to fetch admin stats" });
-    }
-  });
-  app2.get("/api/airlines", async (req, res) => {
-    try {
-      const airlines2 = await storage.getAllAirlines();
-      res.json(airlines2);
-    } catch (error) {
-      console.error("Error fetching airlines:", error);
-      res.status(500).json({ message: "Failed to fetch airlines" });
     }
   });
   app2.get("/api/flights", requireAuth, async (req, res) => {
     try {
-      const userId = req.userId;
-      const flights2 = await storage.getUserFlights(userId);
-      res.json(flights2);
+      const userId = req.user.userId;
+      const flightsList = await db.select().from(flights).where(eq(flights.user_id, userId)).orderBy(desc(flights.date));
+      res.json(flightsList);
     } catch (error) {
-      console.error("Error fetching flights:", error);
+      console.error("\u274C Error fetching flights:", error);
       res.status(500).json({ message: "Failed to fetch flights" });
     }
   });
   app2.post("/api/flights", requireAuth, async (req, res) => {
     try {
-      const userId = req.userId;
-      const validated = insertFlightSchema.parse({
-        ...req.body,
-        userId
+      const userId = req.user.userId;
+      const flightData = insertFlightSchema.parse(req.body);
+      await db.insert(flights).values({
+        ...flightData,
+        user_id: userId,
+        status: flightData.status ?? "completed"
       });
-      const flight = await storage.createFlight(validated);
-      res.json(flight);
+      res.status(201).json({ message: "Flight added successfully" });
     } catch (error) {
-      console.error("Error creating flight:", error);
-      res.status(400).json({ message: "Failed to create flight" });
-    }
-  });
-  app2.post("/api/flights/bulk", requireAuth, async (req, res) => {
-    try {
-      const userId = req.userId;
-      const flightsData = req.body.flights.map((flight) => ({
-        ...flight,
-        userId
-      }));
-      const flights2 = await storage.createFlightsBulk(flightsData);
-      res.json(flights2);
-    } catch (error) {
-      console.error("Error creating flights in bulk:", error);
-      res.status(400).json({ message: "Failed to create flights" });
-    }
-  });
-  app2.put("/api/flights/:id", requireAuth, async (req, res) => {
-    try {
-      const flight = await storage.updateFlight(req.params.id, req.body);
-      res.json(flight);
-    } catch (error) {
-      console.error("Error updating flight:", error);
-      res.status(400).json({ message: "Failed to update flight" });
+      console.error("\u274C Error adding flight:", error);
+      res.status(500).json({ message: "Failed to add flight" });
     }
   });
   app2.delete("/api/flights/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteFlight(req.params.id);
-      res.json({ success: true });
+      const userId = req.user.userId;
+      const flightId = req.params.id;
+      const result = await db.delete(flights).where(and(eq(flights.id, flightId), eq(flights.user_id, userId)));
+      if (!result) return res.status(404).json({ message: "Flight not found" });
+      res.json({ message: "Flight deleted successfully" });
     } catch (error) {
-      console.error("Error deleting flight:", error);
-      res.status(400).json({ message: "Failed to delete flight" });
+      console.error("\u274C Error deleting flight:", error);
+      res.status(500).json({ message: "Failed to delete flight" });
     }
   });
-  app2.get("/api/flights/lookup", requireAuth, async (req, res) => {
+  app2.get("/api/stamps", async (_req, res) => {
     try {
-      const { flightNumber } = req.query;
-      if (!flightNumber || typeof flightNumber !== "string") {
-        return res.status(400).json({ message: "Flight number is required" });
-      }
-      const apiKey = process.env.AVIATIONSTACK_API_KEY;
-      if (!apiKey) {
-        return res.status(500).json({ message: "Flight lookup service not configured" });
-      }
-      const response = await fetch(
-        `http://api.aviationstack.com/v1/flights?access_key=${apiKey}&flight_iata=${flightNumber}`
-      );
-      if (!response.ok) {
-        return res.status(500).json({ message: "Failed to fetch flight data" });
-      }
-      const data = await response.json();
-      if (!data.data || data.data.length === 0) {
-        return res.status(404).json({ message: "Flight not found" });
-      }
-      const flight = data.data[0];
-      console.log("Aviationstack API response:", JSON.stringify(flight, null, 2));
-      const getLiveStatus = () => {
-        const apiStatus = flight.flight_status?.toLowerCase();
-        const hasDelay = flight.departure?.delay > 0 || flight.arrival?.delay > 0;
-        if (apiStatus === "landed") return "landed";
-        if (apiStatus === "active") return "departed";
-        if (apiStatus === "cancelled") return "cancelled";
-        if (apiStatus === "scheduled") {
-          return hasDelay ? "delayed" : "on time";
-        }
-        return "scheduled";
-      };
-      const flightData = {
-        airline: flight.airline?.iata || "",
-        airlineName: flight.airline?.name || "",
-        flightNumber: flight.flight?.iata || "",
-        from: flight.departure?.iata || "",
-        fromAirport: flight.departure?.airport || "",
-        to: flight.arrival?.iata || "",
-        toAirport: flight.arrival?.airport || "",
-        date: flight.flight_date || "",
-        departureTime: flight.departure?.scheduled?.split("T")[1]?.substring(0, 5) || "",
-        arrivalTime: flight.arrival?.scheduled?.split("T")[1]?.substring(0, 5) || "",
-        aircraftType: flight.aircraft?.registration || flight.aircraft?.iata || "",
-        status: flight.flight_status === "landed" ? "completed" : "upcoming",
-        liveStatus: getLiveStatus()
-      };
-      console.log("Transformed flight data:", flightData);
-      res.json(flightData);
+      const allStamps = await db.select().from(stamps);
+      res.json(allStamps);
     } catch (error) {
-      console.error("Flight lookup error:", error);
-      res.status(500).json({ message: "Failed to lookup flight" });
+      console.error("\u274C Error fetching stamps:", error);
+      res.status(500).json({ message: "Failed to fetch stamps" });
     }
   });
-  app2.post("/api/flights/import-default", requireAuth, async (req, res) => {
+  app2.get("/api/airlines", async (req, res) => {
     try {
-      const userId = req.userId;
-      const existingFlights = await storage.getUserFlights(userId);
-      if (existingFlights.length > 0) {
-        return res.status(200).json({ message: "User already has flights", count: existingFlights.length });
-      }
-      const { flights: flights2 } = req.body;
-      if (!flights2 || !Array.isArray(flights2)) {
-        return res.status(400).json({ message: "Invalid flights data" });
-      }
-      const validFlights = flights2.map((flight) => {
-        const validated = insertFlightSchema.parse({
-          userId,
-          date: flight.date,
-          airline: flight.airline,
-          flightNumber: flight.flightNumber,
-          from: flight.from,
-          to: flight.to,
-          departureTime: flight.departureTime || null,
-          arrivalTime: flight.arrivalTime || null,
-          aircraftType: flight.aircraftType || null,
-          status: ["completed", "upcoming", "cancelled"].includes(flight.status) ? flight.status : "completed"
-        });
-        return validated;
-      });
-      const importedFlights = await storage.createFlightsBulk(validFlights);
-      res.json({ success: true, count: importedFlights.length });
+      const q = req.query.q?.trim()?.toLowerCase() ?? "";
+      const baseQuery = db.select({
+        id: airlines.id,
+        airline_code: airlines.airline_code,
+        airline_name: airlines.airline_name,
+        country: airlines.country
+      }).from(airlines);
+      const result = q ? await baseQuery.where(
+        sql2`LOWER(${airlines.airline_name}) LIKE ${"%" + q + "%"} 
+                 OR LOWER(${airlines.airline_code}) LIKE ${"%" + q + "%"}`
+      ) : await baseQuery.limit(500);
+      res.json(result);
     } catch (error) {
-      console.error("Error importing flights:", error);
-      res.status(500).json({ message: "Failed to import flights" });
+      console.error("\u274C Error fetching airlines:", error);
+      res.status(500).json({ message: "Failed to fetch airlines" });
+    }
+  });
+  app2.get("/api/airports", async (req, res) => {
+    try {
+      const q = req.query.search?.trim()?.toLowerCase() ?? "";
+      const whereClause = q ? and(
+        or(
+          sql2`LOWER(${airports.name}) LIKE ${"%" + q + "%"}`,
+          sql2`LOWER(${airports.municipality}) LIKE ${"%" + q + "%"}`,
+          sql2`LOWER(${airports.iata}) LIKE ${"%" + q + "%"}`
+        ),
+        sql2`${airports.iata} IS NOT NULL`
+      ) : sql2`${airports.iata} IS NOT NULL`;
+      const result = await db.select({
+        id: airports.id,
+        name: airports.name,
+        city: airports.municipality,
+        country: airports.iso_country,
+        iata: airports.iata,
+        icao: airports.icao,
+        ident: airports.ident,
+        latitude: airports.latitude,
+        longitude: airports.longitude
+      }).from(airports).where(whereClause).limit(10);
+      res.json(result);
+    } catch (error) {
+      console.error("\u274C Error fetching airports:", error);
+      res.status(500).json({ message: "Failed to fetch airports" });
     }
   });
   const httpServer = createServer(app2);
@@ -559,10 +523,13 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { fileURLToPath } from "url";
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 var __dirname = path.dirname(fileURLToPath(import.meta.url));
 var vite_config_default = defineConfig({
-  plugins: [react(), runtimeErrorOverlay()],
+  plugins: [
+    react()
+    // 🧹 Removed @replit/vite-plugin-runtime-error-modal
+    // (was causing "Failed to parse JSON file" error in dev)
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "client/src"),
@@ -576,8 +543,26 @@ var vite_config_default = defineConfig({
     emptyOutDir: true
   },
   server: {
-    fs: { strict: true, deny: ["**/.*"] }
-  }
+    host: "0.0.0.0",
+    // ✅ Access from LAN / mobile
+    port: 5173,
+    // ✅ Frontend port
+    fs: {
+      strict: true,
+      deny: ["**/.*"]
+      // 🚫 Prevent serving hidden files
+    },
+    proxy: {
+      "/api": {
+        target: "http://localhost:5050",
+        // ✅ Your Express backend
+        changeOrigin: true,
+        secure: false
+      }
+    }
+  },
+  // ✅ Optional: cleaner build logging
+  logLevel: "info"
 });
 
 // server/vite.ts
@@ -609,19 +594,11 @@ async function setupVite(app2, server) {
     }
   });
 }
-function serveStatic(app2) {
-  const distPath = path2.resolve(process.cwd(), "dist/public");
-  if (!fs.existsSync(distPath)) {
-    throw new Error(`\u26A0\uFE0F Build folder not found: ${distPath}. Run \`npm run build\` first.`);
-  }
-  app2.use(express.static(distPath));
-  app2.use("*", (_req, res) => {
-    res.sendFile(path2.join(distPath, "index.html"));
-  });
-}
 
 // server/index.ts
-dotenv.config();
+import cors from "cors";
+import cookieParser from "cookie-parser";
+dotenv2.config();
 process.env.NODE_ENV = process.env.NODE_ENV || "development";
 console.log("\u{1F527} Loaded environment:", {
   hasDatabaseUrl: !!process.env.NEON_DATABASE_URL,
@@ -632,6 +609,20 @@ var app = express2();
 app.set("trust proxy", 1);
 app.use(express2.json());
 app.use(express2.urlencoded({ extended: false }));
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      // for desktop dev
+      "http://192.168.29.116:5173",
+      // for iPhone/devices on same WiFi
+      "http://localhost:5050"
+      // if calling via browser console
+    ],
+    credentials: true
+  })
+);
+app.use(cookieParser());
 app.use((req, res, next) => {
   const start = Date.now();
   const path3 = req.path;
@@ -645,10 +636,9 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path3.startsWith("/api")) {
       let logLine = `${req.method} ${path3} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse)
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      if (logLine.length > 120) logLine = logLine.slice(0, 119) + "\u2026";
-      if (process.env.NODE_ENV !== "production") console.log(logLine);
+      if (capturedJsonResponse) logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      if (logLine.length > 100) logLine = logLine.slice(0, 99) + "\u2026";
+      console.log(logLine);
     }
   });
   next();
@@ -672,8 +662,7 @@ app.use(
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      // ✅ secure in prod
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1e3,
       path: "/"
     }
@@ -682,7 +671,7 @@ app.use(
 (async () => {
   const server = await registerRoutes(app);
   app.use((err, _req, res, _next) => {
-    const status = err.status || 500;
+    const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
     console.error("\u274C Express Error:", message);
     res.status(status).json({ message });
@@ -692,12 +681,10 @@ app.use(
     console.log("\u{1F680} Starting Vite in middleware mode...");
     await setupVite(app, server);
   } else {
-    console.log("\u{1F4E6} Serving static client build...");
-    serveStatic(app);
+    console.log("\u{1F4E6} Skipping serveStatic \u2014 dev mode only");
   }
   const port = parseInt(process.env.PORT || "5050", 10);
-  const host = process.env.NODE_ENV === "production" ? "0.0.0.0" : "localhost";
-  server.listen(port, host, () => {
-    console.log(`\u2705 Server running on http://${host}:${port}`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`\u2705 Server running on http://0.0.0.0:${port}`);
   });
 })();

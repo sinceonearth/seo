@@ -1,6 +1,4 @@
-// ==================================================
-// 🌱 Load environment variables early
-// ==================================================
+
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -18,8 +16,11 @@ console.log("🔧 Loaded environment:", {
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { registerRoutes } from "./routes";
-import { setupVite, serveStatic } from "./vite"; // ✅ include serveStatic for production
+import { registerRoutes } from "./routes"; // ✅ Register modular routes (includes flights.ts)
+import { setupVite } from "./vite";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+
 
 // ==================================================
 // ⚙️ Express App Setup
@@ -28,6 +29,21 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+// ==================================================
+// 🌐 CORS + Cookies
+// ==================================================
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",      // for desktop dev
+      "http://192.168.29.116:5173", // for iPhone/devices on same WiFi
+      "http://localhost:5050",      // if calling via browser console
+    ],
+    credentials: true,
+  })
+);
+app.use(cookieParser());
+
 
 // ==================================================
 // 🧾 Request Logging Middleware
@@ -47,10 +63,9 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse)
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      if (logLine.length > 120) logLine = logLine.slice(0, 119) + "…";
-      if (process.env.NODE_ENV !== "production") console.log(logLine); // 🧹 only log in dev
+      if (capturedJsonResponse) logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      if (logLine.length > 100) logLine = logLine.slice(0, 99) + "…";
+      console.log(logLine);
     }
   });
 
@@ -78,8 +93,8 @@ app.use(
     proxy: true,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // ✅ secure in prod
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: "/",
     },
@@ -87,14 +102,14 @@ app.use(
 );
 
 // ==================================================
-// 🚀 Server Bootstrap
+// 🧩 Register All API Routes
 // ==================================================
 (async () => {
   const server = await registerRoutes(app);
 
-  // Error handler
+  // Global error handler
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || 500;
+    const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
     console.error("❌ Express Error:", message);
     res.status(status).json({ message });
@@ -102,22 +117,21 @@ app.use(
 
   console.log("🌱 Express environment:", app.get("env"));
 
-  // Development vs Production mode
+  // ==================================================
+  // ⚙️ Dev Mode: Start Vite
+  // ==================================================
   if (app.get("env") === "development") {
     console.log("🚀 Starting Vite in middleware mode...");
     await setupVite(app, server);
   } else {
-    console.log("📦 Serving static client build...");
-    serveStatic(app); // ✅ serve built files from dist/public
+    console.log("📦 Skipping serveStatic — dev mode only");
   }
 
   // ==================================================
   // 🖥️ Start the Server
   // ==================================================
   const port = parseInt(process.env.PORT || "5050", 10);
-  const host = process.env.NODE_ENV === "production" ? "0.0.0.0" : "localhost";
-
-  server.listen(port, host, () => {
-    console.log(`✅ Server running on http://${host}:${port}`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`✅ Server running on http://0.0.0.0:${port}`);
   });
 })();
