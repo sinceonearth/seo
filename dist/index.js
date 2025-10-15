@@ -13,7 +13,9 @@ import connectPg from "connect-pg-simple";
 // server/routes.ts
 import { createServer } from "http";
 import dotenv from "dotenv";
-import { sql as sql2, eq, desc, and, or } from "drizzle-orm";
+import { eq, desc, and, or } from "drizzle-orm";
+import fetch from "node-fetch";
+import crypto from "crypto";
 
 // server/db.ts
 import "dotenv/config";
@@ -63,12 +65,12 @@ var sessions = pgTable(
 var users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   alien: varchar("alien").unique().notNull(),
-  // 👽 “A01”, “A02”, etc.
   username: varchar("username").unique().notNull(),
   email: varchar("email").unique().notNull(),
   password_hash: varchar("password_hash"),
   name: varchar("name").notNull(),
-  country: varchar("country"),
+  country: varchar("country").default("Other").notNull(),
+  // ✅ always set
   profile_image_url: varchar("profile_image_url"),
   is_admin: boolean("is_admin").default(false).notNull(),
   created_at: timestamp("created_at").defaultNow(),
@@ -84,8 +86,8 @@ var registerUserSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  country: z.string().optional(),
-  // 👽 Include alien_id for client compatibility
+  country: z.string().default("Other"),
+  // default to Other if not provided
   alien: z.string().regex(/^\d{2}$/, "Alien must be 2 digits (e.g. 01, 02, 10)").optional()
 });
 var loginUserSchema = z.object({
@@ -95,24 +97,22 @@ var loginUserSchema = z.object({
 var flights = pgTable("flights", {
   id: uuid("id").defaultRandom().primaryKey(),
   user_id: uuid("user_id").references(() => users.id).notNull(),
-  // 🏢 Airline info
   airline_name: varchar("airline_name").notNull(),
   airline_code: varchar("airline_code", { length: 3 }).notNull(),
   flight_number: varchar("flight_number").notNull(),
-  // 🌍 Route
   departure: varchar("departure").notNull(),
   arrival: varchar("arrival").notNull(),
-  // 📍 Coordinates
   departure_latitude: doublePrecision("departure_latitude"),
   departure_longitude: doublePrecision("departure_longitude"),
   arrival_latitude: doublePrecision("arrival_latitude"),
   arrival_longitude: doublePrecision("arrival_longitude"),
-  // 🕐 Timing
   departure_time: varchar("departure_time"),
   arrival_time: varchar("arrival_time"),
   date: varchar("date"),
   // YYYY-MM-DD
-  // ✈️ Aircraft & stats
+  // ✅ Add terminal columns
+  departure_terminal: varchar("departure_terminal"),
+  arrival_terminal: varchar("arrival_terminal"),
   aircraft_type: varchar("aircraft_type"),
   distance: doublePrecision("distance"),
   // km
@@ -249,12 +249,13 @@ var storage = {
   async createFlight(flight) {
     const result = await pool.query(
       `INSERT INTO flights (
-         user_id, airline_name, flight_number, departure, arrival,
-         departure_latitude, departure_longitude, arrival_latitude, arrival_longitude,
-         date, departure_time, arrival_time, aircraft_type, distance, duration, status
-       )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-       RETURNING *`,
+       user_id, airline_name, flight_number, departure, arrival,
+       departure_latitude, departure_longitude, arrival_latitude, arrival_longitude,
+       date, departure_time, arrival_time, aircraft_type, distance, duration, status,
+       departure_terminal, arrival_terminal
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+     RETURNING *`,
       [
         flight.userId,
         flight.airlineName,
@@ -271,7 +272,9 @@ var storage = {
         flight.aircraftType ?? null,
         flight.distance ?? 0,
         flight.duration ?? null,
-        flight.status ?? "scheduled"
+        flight.status ?? "scheduled",
+        flight.departure_terminal ?? null,
+        flight.arrival_terminal ?? null
       ]
     );
     return result.rows[0];
@@ -324,7 +327,9 @@ router.post("/register", async (req, res) => {
       email: newUser.email,
       username: newUser.username,
       isAdmin: !!newUser.is_admin,
-      alien: newUser.alien
+      alien: newUser.alien,
+      country: newUser.country
+      // <-- include country in JWT
     });
     return res.status(201).json({
       message: "Registration successful",
@@ -353,8 +358,8 @@ router.post("/login", async (req, res) => {
     if (!user || !user.password_hash) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
-    const validPassword = await bcrypt.compare(password, user.password_hash);
-    if (!validPassword) {
+    const isValid = await bcrypt.compare(password, user.password_hash);
+    if (!isValid) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
     const token = createToken({
@@ -362,7 +367,9 @@ router.post("/login", async (req, res) => {
       email: user.email,
       username: user.username,
       isAdmin: !!user.is_admin,
-      alien: user.alien
+      alien: user.alien,
+      country: user.country
+      // <-- include country in JWT
     });
     return res.json({
       message: "Login successful",
@@ -381,135 +388,187 @@ router.post("/login", async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 });
+router.get("/user", requireAuth, (req, res) => {
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  res.json({
+    id: user.userId,
+    email: user.email,
+    username: user.username,
+    country: user.country ?? null,
+    // <-- now included
+    alien: user.alien,
+    is_admin: user.isAdmin ?? false
+  });
+});
 var auth_default = router;
 
 // server/routes.ts
 dotenv.config();
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ message: "Missing Authorization header" });
-  }
+  if (!authHeader) return res.status(401).json({ message: "Missing Authorization header" });
   const token = authHeader.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "Missing token" });
   const decoded = verifyToken(token);
-  if (!decoded) {
-    return res.status(401).json({ message: "Invalid or expired token" });
-  }
-  req.user = decoded;
+  if (!decoded) return res.status(401).json({ message: "Invalid or expired token" });
+  req.user = {
+    userId: decoded.userId,
+    email: decoded.email,
+    username: decoded.username,
+    country: decoded.country ?? null,
+    alien: decoded.alien ?? null,
+    isAdmin: decoded.isAdmin ?? false
+  };
   next();
 }
 function requireAdmin(req, res, next) {
-  if (!req.user?.isAdmin) {
-    return res.status(403).json({ message: "Admins only" });
-  }
+  if (!req.user?.isAdmin) return res.status(403).json({ message: "Admins only" });
   next();
+}
+async function fetchFlightTimes(flightNumber, date) {
+  const API_KEY = process.env.AVIATIONSTACK_API_KEY;
+  if (!API_KEY) return { departure_time: null, arrival_time: null };
+  const params = new URLSearchParams({
+    access_key: API_KEY,
+    flight_iata: flightNumber,
+    flight_date: date,
+    limit: "1"
+  });
+  const url = `https://api.aviationstack.com/v1/flights?${params.toString()}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return { departure_time: null, arrival_time: null };
+    const raw = await response.json();
+    if (!raw || typeof raw !== "object" || !("data" in raw)) return { departure_time: null, arrival_time: null };
+    const data = raw;
+    const flight = data.data?.[0];
+    return {
+      departure_time: flight?.departure?.scheduled ?? null,
+      arrival_time: flight?.arrival?.scheduled ?? null
+    };
+  } catch {
+    return { departure_time: null, arrival_time: null };
+  }
 }
 async function registerRoutes(app2) {
   app2.use("/api/auth", auth_default);
   app2.get("/api/admin/users", requireAuth, requireAdmin, async (_req, res) => {
     try {
       const usersList = await storage.getAllUsers();
-      res.json(usersList.map(({ password_hash, ...u }) => u));
-    } catch (error) {
-      console.error("\u274C Error fetching users:", error);
+      res.json(usersList.map(({ password_hash, ...u }) => ({ ...u, country: u.country ?? null })));
+    } catch (err) {
+      console.error("\u274C Error fetching users:", err);
       res.status(500).json({ message: "Failed to fetch users" });
     }
   });
   app2.get("/api/flights", requireAuth, async (req, res) => {
     try {
-      const userId = req.user.userId;
-      const flightsList = await db.select().from(flights).where(eq(flights.user_id, userId)).orderBy(desc(flights.date));
+      const flightsList = await db.select().from(flights).where(eq(flights.user_id, req.user.userId)).orderBy(desc(flights.date));
       res.json(flightsList);
-    } catch (error) {
-      console.error("\u274C Error fetching flights:", error);
+    } catch (err) {
+      console.error("\u274C Error fetching flights:", err);
       res.status(500).json({ message: "Failed to fetch flights" });
     }
   });
   app2.post("/api/flights", requireAuth, async (req, res) => {
     try {
+      const body = req.body;
       const userId = req.user.userId;
-      const flightData = insertFlightSchema.parse(req.body);
-      await db.insert(flights).values({
-        ...flightData,
+      if (!body.date || !body.flight_number || !body.departure || !body.arrival || !body.status) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      const findAirport = async (code) => {
+        if (!code) return null;
+        const result = await db.select().from(airports).where(or(eq(airports.iata, code), eq(airports.ident, code), eq(airports.icao, code))).limit(1);
+        return result[0] ?? null;
+      };
+      const depAirport = await findAirport(body.departure);
+      const arrAirport = await findAirport(body.arrival);
+      const times = !body.departure_time || !body.arrival_time ? await fetchFlightTimes(body.flight_number, body.date) : { departure_time: body.departure_time, arrival_time: body.arrival_time };
+      const newFlight = {
+        id: crypto.randomUUID(),
         user_id: userId,
-        status: flightData.status ?? "completed"
-      });
-      res.status(201).json({ message: "Flight added successfully" });
-    } catch (error) {
-      console.error("\u274C Error adding flight:", error);
+        date: body.date,
+        flight_number: body.flight_number,
+        departure: depAirport?.iata ?? depAirport?.ident ?? body.departure,
+        arrival: arrAirport?.iata ?? arrAirport?.ident ?? body.arrival,
+        departure_time: times.departure_time,
+        arrival_time: times.arrival_time,
+        aircraft_type: body.aircraft_type ?? null,
+        status: body.status,
+        created_at: /* @__PURE__ */ new Date(),
+        airline_name: body.airline_name ?? null,
+        departure_terminal: body.departure_terminal ?? null,
+        arrival_terminal: body.arrival_terminal ?? null,
+        departure_latitude: body.departure_latitude ?? depAirport?.latitude ?? null,
+        departure_longitude: body.departure_longitude ?? depAirport?.longitude ?? null,
+        arrival_latitude: body.arrival_latitude ?? arrAirport?.latitude ?? null,
+        arrival_longitude: body.arrival_longitude ?? arrAirport?.longitude ?? null,
+        duration: body.duration ?? null,
+        distance: body.distance ? Number(body.distance) : null,
+        airline_code: body.airline_code ?? null
+      };
+      await db.insert(flights).values(newFlight);
+      res.status(201).json({ message: "Flight added successfully", flight: newFlight });
+    } catch (err) {
+      console.error("\u274C Error adding flight:", err);
       res.status(500).json({ message: "Failed to add flight" });
     }
   });
   app2.delete("/api/flights/:id", requireAuth, async (req, res) => {
     try {
-      const userId = req.user.userId;
-      const flightId = req.params.id;
-      const result = await db.delete(flights).where(and(eq(flights.id, flightId), eq(flights.user_id, userId)));
-      if (!result) return res.status(404).json({ message: "Flight not found" });
+      const { id } = req.params;
+      const deleted = await db.delete(flights).where(and(eq(flights.id, id), eq(flights.user_id, req.user.userId)));
+      if (!deleted) return res.status(404).json({ message: "Flight not found" });
       res.json({ message: "Flight deleted successfully" });
-    } catch (error) {
-      console.error("\u274C Error deleting flight:", error);
+    } catch (err) {
+      console.error("\u274C Error deleting flight:", err);
       res.status(500).json({ message: "Failed to delete flight" });
     }
   });
-  app2.get("/api/stamps", async (_req, res) => {
+  app2.get("/api/flights/search", requireAuth, async (req, res) => {
     try {
-      const allStamps = await db.select().from(stamps);
-      res.json(allStamps);
-    } catch (error) {
-      console.error("\u274C Error fetching stamps:", error);
-      res.status(500).json({ message: "Failed to fetch stamps" });
+      const { flight_number, airline_name, dep_iata, arr_iata, date } = req.query;
+      if (!date) return res.status(400).json({ message: "Date is required" });
+      const API_KEY = process.env.AVIATIONSTACK_API_KEY;
+      if (!API_KEY) return res.status(500).json({ message: "API key missing" });
+      const params = new URLSearchParams({
+        access_key: API_KEY,
+        limit: "10",
+        flight_date: date
+      });
+      if (flight_number) params.append("flight_iata", flight_number);
+      const url = `https://api.aviationstack.com/v1/flights?${params.toString()}`;
+      const response = await fetch(url);
+      if (!response.ok) return res.status(500).json({ message: "Failed to fetch flights from API" });
+      const raw = await response.json();
+      const data = raw;
+      let flightsData = data.data || [];
+      if (dep_iata) flightsData = flightsData.filter((f) => f.departure?.iata?.toUpperCase() === dep_iata.toUpperCase());
+      if (arr_iata) flightsData = flightsData.filter((f) => f.arrival?.iata?.toUpperCase() === arr_iata.toUpperCase());
+      if (airline_name) flightsData = flightsData.filter((f) => f.airline?.name?.toLowerCase().includes(airline_name.toLowerCase()));
+      const normalized = flightsData.map((f) => ({
+        date: f.flight_date || "",
+        status: f.flight_status || "scheduled",
+        dep_iata: f.departure?.iata || "N/A",
+        dep_airport: f.departure?.airport || "N/A",
+        dep_time: f.departure?.scheduled || null,
+        arr_iata: f.arrival?.iata || "N/A",
+        arr_airport: f.arrival?.airport || "N/A",
+        arr_time: f.arrival?.scheduled || null,
+        airline_name: f.airline?.name || "N/A",
+        flight_number: f.flight?.iata || f.flight?.number || "N/A"
+      }));
+      res.json(normalized);
+    } catch (err) {
+      console.error("\u274C Error searching flights:", err);
+      res.status(500).json({ message: "Failed to search flights" });
     }
   });
-  app2.get("/api/airlines", async (req, res) => {
-    try {
-      const q = req.query.q?.trim()?.toLowerCase() ?? "";
-      const baseQuery = db.select({
-        id: airlines.id,
-        airline_code: airlines.airline_code,
-        airline_name: airlines.airline_name,
-        country: airlines.country
-      }).from(airlines);
-      const result = q ? await baseQuery.where(
-        sql2`LOWER(${airlines.airline_name}) LIKE ${"%" + q + "%"} 
-                 OR LOWER(${airlines.airline_code}) LIKE ${"%" + q + "%"}`
-      ) : await baseQuery.limit(500);
-      res.json(result);
-    } catch (error) {
-      console.error("\u274C Error fetching airlines:", error);
-      res.status(500).json({ message: "Failed to fetch airlines" });
-    }
-  });
-  app2.get("/api/airports", async (req, res) => {
-    try {
-      const q = req.query.search?.trim()?.toLowerCase() ?? "";
-      const whereClause = q ? and(
-        or(
-          sql2`LOWER(${airports.name}) LIKE ${"%" + q + "%"}`,
-          sql2`LOWER(${airports.municipality}) LIKE ${"%" + q + "%"}`,
-          sql2`LOWER(${airports.iata}) LIKE ${"%" + q + "%"}`
-        ),
-        sql2`${airports.iata} IS NOT NULL`
-      ) : sql2`${airports.iata} IS NOT NULL`;
-      const result = await db.select({
-        id: airports.id,
-        name: airports.name,
-        city: airports.municipality,
-        country: airports.iso_country,
-        iata: airports.iata,
-        icao: airports.icao,
-        ident: airports.ident,
-        latitude: airports.latitude,
-        longitude: airports.longitude
-      }).from(airports).where(whereClause).limit(10);
-      res.json(result);
-    } catch (error) {
-      console.error("\u274C Error fetching airports:", error);
-      res.status(500).json({ message: "Failed to fetch airports" });
-    }
-  });
-  const httpServer = createServer(app2);
-  return httpServer;
+  return createServer(app2);
 }
 
 // server/vite.ts
@@ -598,10 +657,11 @@ async function setupVite(app2, server) {
 // server/index.ts
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import path3 from "path";
 dotenv2.config();
 process.env.NODE_ENV = process.env.NODE_ENV || "development";
 console.log("\u{1F527} Loaded environment:", {
-  hasDatabaseUrl: !!process.env.NEON_DATABASE_URL,
+  hasDatabaseUrl: !!process.env.DATABASE_URL,
   hasSessionSecret: !!process.env.SESSION_SECRET,
   nodeEnv: process.env.NODE_ENV
 });
@@ -613,11 +673,8 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      // for desktop dev
       "http://192.168.29.116:5173",
-      // for iPhone/devices on same WiFi
       "http://localhost:5050"
-      // if calling via browser console
     ],
     credentials: true
   })
@@ -625,7 +682,7 @@ app.use(
 app.use(cookieParser());
 app.use((req, res, next) => {
   const start = Date.now();
-  const path3 = req.path;
+  const pathReq = req.path;
   let capturedJsonResponse = void 0;
   const originalResJson = res.json;
   res.json = function(bodyJson, ...args) {
@@ -634,8 +691,8 @@ app.use((req, res, next) => {
   };
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path3.startsWith("/api")) {
-      let logLine = `${req.method} ${path3} ${res.statusCode} in ${duration}ms`;
+    if (pathReq.startsWith("/api")) {
+      let logLine = `${req.method} ${pathReq} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       if (logLine.length > 100) logLine = logLine.slice(0, 99) + "\u2026";
       console.log(logLine);
@@ -645,7 +702,7 @@ app.use((req, res, next) => {
 });
 var pgStore = connectPg(session);
 var sessionStore = new pgStore({
-  conString: process.env.NEON_DATABASE_URL,
+  conString: process.env.DATABASE_URL,
   createTableIfMissing: false,
   ttl: 7 * 24 * 60 * 60,
   // 7 days
@@ -681,7 +738,12 @@ app.use(
     console.log("\u{1F680} Starting Vite in middleware mode...");
     await setupVite(app, server);
   } else {
-    console.log("\u{1F4E6} Skipping serveStatic \u2014 dev mode only");
+    console.log("\u{1F4E6} Production: Serving built frontend");
+    const __dirname2 = path3.resolve();
+    app.use(express2.static(path3.join(__dirname2, "../client/dist")));
+    app.get("*", (_req, res) => {
+      res.sendFile(path3.join(__dirname2, "../client/dist", "index.html"));
+    });
   }
   const port = parseInt(process.env.PORT || "5050", 10);
   server.listen(port, "0.0.0.0", () => {

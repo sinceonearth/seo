@@ -24,7 +24,7 @@ self.addEventListener('install', (event) => {
         console.error('[SW] Error caching static files:', err);
       })
   );
-  self.skipWaiting();
+  self.skipWaiting();x
 });
 
 self.addEventListener('activate', (event) => {
