@@ -102,6 +102,40 @@ interface AviationStackResponse {
 }
 
 /* =========================
+   Helper: fetch flight times
+========================= */
+async function fetchFlightTimes(flightNumber: string, date: string) {
+  const API_KEY = process.env.AVIATIONSTACK_API_KEY;
+  if (!API_KEY) return { departure_time: null, arrival_time: null };
+
+  const params = new URLSearchParams({
+    access_key: API_KEY,
+    flight_iata: flightNumber,
+    flight_date: date,
+    limit: "1",
+  });
+  const url = `https://api.aviationstack.com/v1/flights?${params.toString()}`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return { departure_time: null, arrival_time: null };
+
+    const raw: unknown = await response.json();
+    if (!raw || typeof raw !== "object" || !("data" in raw)) return { departure_time: null, arrival_time: null };
+
+    const data = raw as AviationStackResponse;
+    const flight = data.data?.[0];
+
+    return {
+      departure_time: flight?.departure?.scheduled ?? null,
+      arrival_time: flight?.arrival?.scheduled ?? null,
+    };
+  } catch {
+    return { departure_time: null, arrival_time: null };
+  }
+}
+
+/* =========================
    Register routes
 ========================= */
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -156,6 +190,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const depAirport = await findAirport(body.departure);
       const arrAirport = await findAirport(body.arrival);
 
+      // Fetch times if missing
+      const times = (!body.departure_time || !body.arrival_time)
+        ? await fetchFlightTimes(body.flight_number, body.date)
+        : { departure_time: body.departure_time, arrival_time: body.arrival_time };
+
       const newFlight = {
         id: crypto.randomUUID(),
         user_id: userId,
@@ -163,8 +202,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         flight_number: body.flight_number,
         departure: depAirport?.iata ?? depAirport?.ident ?? body.departure,
         arrival: arrAirport?.iata ?? arrAirport?.ident ?? body.arrival,
-        departure_time: body.departure_time ?? null,
-        arrival_time: body.arrival_time ?? null,
+        departure_time: times.departure_time,
+        arrival_time: times.arrival_time,
         aircraft_type: body.aircraft_type ?? null,
         status: body.status,
         created_at: new Date(),
@@ -203,187 +242,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- Search flights (AviationStack) ---
-  app.get("/api/flights/search", async (req: Request, res) => {
+  // --- Search flights (with timings) ---
+  app.get("/api/flights/search", requireAuth, async (req: RequestWithUser, res) => {
     try {
-      const {
-        date: qDate,
-        flight_date: qFlightDate,
-        dep_iata: qDep,
-        arr_iata: qArr,
-        airline_iata: qAirlineIata,
-        airline_name: qAirlineName,
-        flight_number: qFlightNumber,
-      } = req.query as Record<string, string | undefined>;
+      const { flight_number, airline_name, dep_iata, arr_iata, date } = req.query;
 
-      const date = (qDate || qFlightDate || "").trim();
-      const dep_iata = (qDep || "").trim();
-      const arr_iata = (qArr || "").trim();
-      const airline_iata = (qAirlineIata || "").trim();
-      const airline_name = (qAirlineName || "").trim();
-      const flight_number = (qFlightNumber || "").trim();
+      if (!date) return res.status(400).json({ message: "Date is required" });
 
       const API_KEY = process.env.AVIATIONSTACK_API_KEY;
-      if (!API_KEY) return res.status(500).json({ message: "API key not configured" });
+      if (!API_KEY) return res.status(500).json({ message: "API key missing" });
 
-      const params = new URLSearchParams({ access_key: API_KEY, limit: "100" });
-      if (date) params.set("flight_date", date);
-      if (dep_iata) params.set("dep_iata", dep_iata);
-      if (arr_iata) params.set("arr_iata", arr_iata);
-      if (airline_iata) params.set("airline_iata", airline_iata);
-      if (flight_number) params.set("flight_iata", flight_number);
+      const params = new URLSearchParams({
+        access_key: API_KEY,
+        limit: "10",
+        flight_date: date as string,
+      });
+      if (flight_number) params.append("flight_iata", flight_number as string);
 
       const url = `https://api.aviationstack.com/v1/flights?${params.toString()}`;
-      console.log("🔍 Fetching AviationStack URL:", url);
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
-
-      let response;
-      try {
-        response = await fetch(url, { signal: controller.signal });
-      } finally {
-        clearTimeout(timeout);
-      }
-
-      if (!response.ok) {
-        const txt = await response.text().catch(() => "");
-        console.error("❌ AviationStack HTTP error:", response.status, response.statusText, txt);
-        return res.status(502).json({ message: "AviationStack request failed" });
-      }
+      const response = await fetch(url);
+      if (!response.ok) return res.status(500).json({ message: "Failed to fetch flights from API" });
 
       const raw: unknown = await response.json();
-      if (!raw || typeof raw !== "object" || !("data" in raw)) {
-        console.error("❌ Invalid AviationStack response:", raw);
-        return res.status(500).json({ message: "Invalid response from AviationStack" });
-      }
+      const data = raw as AviationStackResponse;
 
-      const apiResp = raw as AviationStackResponse;
-      if (apiResp.error) {
-        console.error("❌ AviationStack returned error:", apiResp.error);
-        return res.status(400).json({ error: apiResp.error });
-      }
+      let flightsData = data.data || [];
 
-      const normalized = (apiResp.data ?? [])
-        .map((f) => {
-          const mainFlight = f.flight ?? {};
-          const codeshare = mainFlight.codeshared;
+      if (dep_iata) flightsData = flightsData.filter(f => f.departure?.iata?.toUpperCase() === (dep_iata as string).toUpperCase());
+      if (arr_iata) flightsData = flightsData.filter(f => f.arrival?.iata?.toUpperCase() === (arr_iata as string).toUpperCase());
+      if (airline_name) flightsData = flightsData.filter(f => f.airline?.name?.toLowerCase().includes((airline_name as string).toLowerCase()));
 
-          const airlineName = codeshare?.airline_name ?? f.airline?.name ?? null;
-          const flightNum = codeshare?.flight_iata ?? mainFlight.iata ?? mainFlight.number ?? null;
-
-          return {
-            date: f.flight_date ?? null,
-            status: f.flight_status ?? null,
-            dep_iata: f.departure?.iata ?? null,
-            dep_airport: f.departure?.airport ?? null,
-            arr_iata: f.arrival?.iata ?? null,
-            arr_airport: f.arrival?.airport ?? null,
-            airline_name: airlineName,
-            flight_number: flightNum,
-          };
-        })
-        .filter((f) => {
-          if (date && f.date && !f.date.startsWith(date)) return false;
-          if (dep_iata && f.dep_iata?.toLowerCase() !== dep_iata.toLowerCase()) return false;
-          if (arr_iata && f.arr_iata?.toLowerCase() !== arr_iata.toLowerCase()) return false;
-          if (airline_iata && f.airline_name?.toLowerCase() !== airline_iata.toLowerCase()) return false;
-          if (flight_number && f.flight_number?.toLowerCase() !== flight_number.toLowerCase()) return false;
-          return true;
-        });
-
-      console.log("📦 Normalized flights:", normalized.length, "items");
-      return res.json(normalized);
-    } catch (err) {
-      console.error("❌ Error searching flights:", err);
-      return res.status(500).json({ message: "Failed to search flights" });
-    }
-  });
-
-  // --- Stamps ---
-  app.get("/api/stamps", async (_req, res) => {
-    try {
-      const allStamps = await db.select().from(stamps);
-      res.json(allStamps);
-    } catch (err) {
-      console.error("❌ Error fetching stamps:", err);
-      res.status(500).json({ message: "Failed to fetch stamps" });
-    }
-  });
-
-  // --- Airlines ---
-  app.get("/api/airlines", async (req: Request, res) => {
-    try {
-      const q = (req.query.q as string)?.trim()?.toLowerCase() ?? "";
-      const baseQuery = db
-        .select({
-          id: airlines.id,
-          airline_code: airlines.airline_code,
-          airline_name: airlines.airline_name,
-          country: airlines.country,
-        })
-        .from(airlines);
-
-      const result = q
-        ? await baseQuery.where(
-            sql`LOWER(${airlines.airline_name}) LIKE ${"%" + q + "%"} OR LOWER(${airlines.airline_code}) LIKE ${"%" + q + "%"}`
-          )
-        : await baseQuery.limit(500);
-
-      res.json(result);
-    } catch (err) {
-      console.error("❌ Error fetching airlines:", err);
-      res.status(500).json({ message: "Failed to fetch airlines" });
-    }
-  });
-
-  // --- Airports ---
-  app.get("/api/airports", async (req: Request, res) => {
-    try {
-      const q = (req.query.search as string)?.trim()?.toLowerCase() ?? "";
-      const whereClause = q
-        ? and(
-            or(
-              sql`LOWER(${airports.name}) LIKE ${"%" + q + "%"} `,
-              sql`LOWER(${airports.municipality}) LIKE ${"%" + q + "%"} `,
-              sql`LOWER(${airports.iata}) LIKE ${"%" + q + "%"} `
-            ),
-            sql`${airports.iata} IS NOT NULL`
-          )
-        : sql`${airports.iata} IS NOT NULL`;
-
-      const rows = await db
-        .select({
-          id: airports.id,
-          name: airports.name,
-          city: airports.municipality,
-          country: airports.iso_country,
-          iata: airports.iata,
-          icao: airports.icao,
-          ident: airports.ident,
-          latitude: airports.latitude,
-          longitude: airports.longitude,
-        })
-        .from(airports)
-        .where(whereClause)
-        .limit(10);
-
-      const result = rows.map(a => ({
-        id: a.id,
-        name: a.name ?? "Unknown",
-        city: a.city ?? null,
-        country: a.country ?? null,
-        iata: a.iata ?? a.ident ?? null,
-        icao: a.icao ?? null,
-        ident: a.ident ?? null,
-        latitude: a.latitude ?? null,
-        longitude: a.longitude ?? null,
+      const normalized = flightsData.map(f => ({
+        date: f.flight_date || "",
+        status: f.flight_status || "scheduled",
+        dep_iata: f.departure?.iata || "N/A",
+        dep_airport: f.departure?.airport || "N/A",
+        dep_time: f.departure?.scheduled || null,
+        arr_iata: f.arrival?.iata || "N/A",
+        arr_airport: f.arrival?.airport || "N/A",
+        arr_time: f.arrival?.scheduled || null,
+        airline_name: f.airline?.name || "N/A",
+        flight_number: f.flight?.iata || f.flight?.number || "N/A",
       }));
 
-      res.json(result);
+      res.json(normalized);
     } catch (err) {
-      console.error("❌ Error fetching airports:", err);
-      res.status(500).json({ message: "Failed to fetch airports", error: (err as Error).message });
+      console.error("❌ Error searching flights:", err);
+      res.status(500).json({ message: "Failed to search flights" });
     }
   });
 

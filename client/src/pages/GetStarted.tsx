@@ -139,8 +139,8 @@ export default function GetStarted() {
           <div className="flex-1 h-px bg-gray-300" />
         </div>
 
-        <button className="w-full border border-gray-300 text-black text-md font-medium py-4 rounded-md flex items-center justify-center gap-2">
-          <Apple size={20} /> Continue with Apple
+        <button className="w-full border border-green-600 text-black text-md font-medium py-4 rounded-full flex items-center justify-center gap-2">
+          Continue as Guest
         </button>
       </motion.div>
     </motion.div>

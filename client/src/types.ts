@@ -1,5 +1,3 @@
-// client/src/types.ts
-
 /* -------------------------------------------------------------------------- */
 /* 🏷️ Stamp Type (for Achievements / UI)                                      */
 /* -------------------------------------------------------------------------- */
@@ -13,7 +11,6 @@ export interface UIStamp {
 /* -------------------------------------------------------------------------- */
 /* ✈️ AviationStack Flight Type (for AddFlightModal)                          */
 /* -------------------------------------------------------------------------- */
-// Add this line at the top or bottom
 // Original raw API structure
 export interface AviationStackFlight {
   flight_date?: string;
@@ -34,7 +31,7 @@ export interface AviationStackFlight {
   departure?: {
     iata?: string;
     airport?: string;
-    scheduled?: string;
+    scheduled?: string; // departure time
     terminal?: string;
     latitude?: number;
     longitude?: number;
@@ -42,7 +39,7 @@ export interface AviationStackFlight {
   arrival?: {
     iata?: string;
     airport?: string;
-    scheduled?: string;
+    scheduled?: string; // arrival time
     terminal?: string;
     latitude?: number;
     longitude?: number;
@@ -52,14 +49,31 @@ export interface AviationStackFlight {
   distance?: number;
 }
 
-// ✅ Normalized structure your frontend uses
+/* -------------------------------------------------------------------------- */
+/* ✅ Normalized structure your frontend uses                                  */
+/* -------------------------------------------------------------------------- */
 export interface NormalizedFlight {
-  date: string;
-  status: string;
-  dep_iata: string;
-  dep_airport: string;
-  arr_iata: string;
-  arr_airport: string;
-  airline_name: string;
-  flight_number: string;
+  id: string;             // unique flight ID
+  user_id: string;        // user who owns the flight
+  date: string;           // flight date (YYYY-MM-DD)
+  status: string;         // status of the flight ("Scheduled", "Landed", etc.)
+  
+  dep_iata: string;       // departure airport IATA
+  dep_airport: string;    // departure airport name
+  dep_time?: string;      // optional departure time
+  dep_terminal?: string;  // optional departure terminal
+  dep_latitude?: number | null;
+  dep_longitude?: number | null;
+  
+  arr_iata: string;       // arrival airport IATA
+  arr_airport: string;    // arrival airport name
+  arr_time?: string;      // optional arrival time
+  arr_terminal?: string;  // optional arrival terminal
+  arr_latitude?: number | null;
+  arr_longitude?: number | null;
+  
+  airline_name: string;   // airline name
+  flight_number: string;  // flight number
+  created_at?: Date | null; // record creation time
 }
+

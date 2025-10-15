@@ -31,7 +31,11 @@ export interface FlightInput {
   distance?: number;
   duration?: string | null;
   status?: string;
+
+  departure_terminal?: string | null;
+  arrival_terminal?: string | null;
 }
+
 
 export const storage = {
   /* ===============================
@@ -107,34 +111,36 @@ export const storage = {
     return result.rows;
   },
 
-  async createFlight(flight: FlightInput) {
-    const result = await pool.query(
-      `INSERT INTO flights (
-         user_id, airline_name, flight_number, departure, arrival,
-         departure_latitude, departure_longitude, arrival_latitude, arrival_longitude,
-         date, departure_time, arrival_time, aircraft_type, distance, duration, status
-       )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-       RETURNING *`,
-      [
-        flight.userId,
-        flight.airlineName,
-        flight.flightNumber,
-        flight.departure,
-        flight.arrival,
-        flight.departureLatitude ?? null,
-        flight.departureLongitude ?? null,
-        flight.arrivalLatitude ?? null,
-        flight.arrivalLongitude ?? null,
-        flight.date,
-        flight.departureTime ?? null,
-        flight.arrivalTime ?? null,
-        flight.aircraftType ?? null,
-        flight.distance ?? 0,
-        flight.duration ?? null,
-        flight.status ?? "scheduled",
-      ]
-    );
-    return result.rows[0];
-  },
-};
+async createFlight(flight: FlightInput) {
+  const result = await pool.query(
+    `INSERT INTO flights (
+       user_id, airline_name, flight_number, departure, arrival,
+       departure_latitude, departure_longitude, arrival_latitude, arrival_longitude,
+       date, departure_time, arrival_time, aircraft_type, distance, duration, status,
+       departure_terminal, arrival_terminal
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+     RETURNING *`,
+    [
+      flight.userId,
+      flight.airlineName,
+      flight.flightNumber,
+      flight.departure,
+      flight.arrival,
+      flight.departureLatitude ?? null,
+      flight.departureLongitude ?? null,
+      flight.arrivalLatitude ?? null,
+      flight.arrivalLongitude ?? null,
+      flight.date,
+      flight.departureTime ?? null,
+      flight.arrivalTime ?? null,
+      flight.aircraftType ?? null,
+      flight.distance ?? 0,
+      flight.duration ?? null,
+      flight.status ?? "scheduled",
+      flight.departure_terminal ?? null,
+      flight.arrival_terminal ?? null,
+    ]
+  );
+  return result.rows[0];
+}}

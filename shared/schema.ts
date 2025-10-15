@@ -103,6 +103,10 @@ export const flights = pgTable("flights", {
   arrival_time: varchar("arrival_time"),
   date: varchar("date"), // YYYY-MM-DD
 
+  // ✅ Add terminal columns
+  departure_terminal: varchar("departure_terminal"),
+  arrival_terminal: varchar("arrival_terminal"),
+
   aircraft_type: varchar("aircraft_type"),
   distance: doublePrecision("distance"), // km
   duration: varchar("duration"),
@@ -110,6 +114,7 @@ export const flights = pgTable("flights", {
 
   created_at: timestamp("created_at").defaultNow(),
 });
+
 
 export const insertFlightSchema = createInsertSchema(flights).omit({
   id: true,

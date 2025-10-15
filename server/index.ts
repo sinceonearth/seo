@@ -1,3 +1,4 @@
+
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -15,10 +16,11 @@ console.log("🔧 Loaded environment:", {
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { registerRoutes } from "./routes"; // ✅ Register modular routes
+import { registerRoutes } from "./routes"; // ✅ Register modular routes (includes flights.ts)
+import { setupVite } from "./vite";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import path from "path";
+
 
 // ==================================================
 // ⚙️ Express App Setup
@@ -27,20 +29,48 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-
 // ==================================================
 // 🌐 CORS + Cookies
 // ==================================================
 app.use(
   cors({
     origin: [
-      "http://localhost:5173",
-      "http://192.168.29.116:5173",
+      "http://localhost:5173",      // for desktop dev
+      "http://192.168.29.116:5173", // for iPhone/devices on same WiFi
+      "http://localhost:5050",      // if calling via browser console
     ],
     credentials: true,
   })
 );
 app.use(cookieParser());
+
+
+// ==================================================
+// 🧾 Request Logging Middleware
+// ==================================================
+app.use((req, res, next) => {
+  const start = Date.now();
+  const path = req.path;
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (path.startsWith("/api")) {
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      if (logLine.length > 100) logLine = logLine.slice(0, 99) + "…";
+      console.log(logLine);
+    }
+  });
+
+  next();
+});
 
 // ==================================================
 // 💾 Session Setup
@@ -49,7 +79,7 @@ const pgStore = connectPg(session);
 const sessionStore = new pgStore({
   conString: process.env.NEON_DATABASE_URL,
   createTableIfMissing: false,
-  ttl: 7 * 24 * 60 * 60,
+  ttl: 7 * 24 * 60 * 60, // 7 days
   tableName: "sessions",
 });
 
@@ -88,25 +118,13 @@ app.use(
   console.log("🌱 Express environment:", app.get("env"));
 
   // ==================================================
-  // 📦 Production: Serve frontend
+  // ⚙️ Dev Mode: Start Vite
   // ==================================================
-  if (process.env.NODE_ENV === "production") {
-    const frontendPath = path.join(__dirname, "../../client/dist");
-    console.log("📦 Serving frontend from:", frontendPath);
-
-    app.use(express.static(frontendPath));
-
-    // SPA fallback for React Router
-    app.get("*", (_req, res) => {
-      res.sendFile(path.join(frontendPath, "index.html"));
-    });
-  } else {
-    // ==================================================
-    // ⚙️ Dev Mode: Start Vite
-    // ==================================================
+  if (app.get("env") === "development") {
     console.log("🚀 Starting Vite in middleware mode...");
-    const { setupVite } = await import("./vite");
     await setupVite(app, server);
+  } else {
+    console.log("📦 Skipping serveStatic — dev mode only");
   }
 
   // ==================================================

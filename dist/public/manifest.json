@@ -1,6 +1,6 @@
 {
-  "name": "SinceOnEarth Flight Tracker",
-  "short_name": "SinceOnEarth",
+  "name": "SinceOnEarth",
+  "short_name": "SOE",
   "description": "Track your flight history, visualize travel routes on a 3D globe, and discover your aviation journey statistics",
   "start_url": "/",
   "display": "standalone",
@@ -9,16 +9,23 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "icons/face-alien-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "icons/face-alien-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "icons/face-alien-180x180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any",
+      "platform": "apple"
     }
   ],
   "categories": ["travel", "productivity", "utilities"]

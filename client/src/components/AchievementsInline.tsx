@@ -26,6 +26,7 @@ export default function AchievementsInline({
 }: AchievementsInlineProps) {
   const [validStamps, setValidStamps] = useState<UIStamp[]>([]);
 
+  // Map country names to ISO codes
   const countryToISO: Record<string, string> = {
     Japan: "jp",
     Brazil: "br",
@@ -46,21 +47,22 @@ export default function AchievementsInline({
     India: "in",
   };
 
-  // Compute earned ISO codes
+  // Compute earned ISO codes in lowercase
   const earnedISOCodes = useMemo(() => {
     const codes = new Set<string>();
     airports.forEach((airport) => {
-      if (visitedAirportIds.has(airport.id)) {
-        const country = airport.country || airport.iso_country;
-        if (!country) return;
-        const iso = countryToISO[country] || country.toLowerCase();
-        codes.add(iso.toLowerCase());
-      }
+      if (!visitedAirportIds.has(airport.id)) return;
+
+      const country = airport.country || airport.iso_country;
+      if (!country) return;
+
+      const iso = (countryToISO[country] || country).toLowerCase();
+      codes.add(iso);
     });
     return codes;
   }, [visitedAirportIds, airports]);
 
-  // Validate images and filter out missing ones
+  // Validate images
   useEffect(() => {
     const loadImages = async () => {
       const checked: UIStamp[] = [];
@@ -71,10 +73,10 @@ export default function AchievementsInline({
               const img = new Image();
               img.src = stamp.imageUrl;
               img.onload = () => {
-                checked.push(stamp); // only include stamps that exist
+                checked.push(stamp);
                 resolve();
               };
-              img.onerror = () => resolve(); // ignore missing images
+              img.onerror = () => resolve();
             })
         )
       );

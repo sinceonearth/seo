@@ -1,10 +1,39 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Globe, Plane, Ruler, Building2, TowerControl, Award } from "lucide-react";
+import { Globe, Plane, Ruler, Building2, TowerControl, Award, Clock } from "lucide-react";
 import AchievementsInline from "@/components/AchievementsInline";
 import type { Flight } from "@shared/schema";
+
+// Import airports.json
+import airportsDataRaw from "@/airports.json";
+
+interface AirportJSON {
+  iata: string;
+  icao: string;
+  name: string;
+  city: string;
+  country: string;
+  iso_country: string;
+  latitude: number;
+  longitude: number;
+  altitude?: number;
+  timezone?: string;
+  dst?: string;
+  tz?: string;
+}
+
+// Type expected by AchievementsInline
+interface AchievementAirport {
+  id: number;
+  ident: string;
+  iata?: string;
+  iso_country?: string;
+  country?: string;
+}
+
+const airportsData: AirportJSON[] = airportsDataRaw as AirportJSON[];
 
 interface StatsDashboardProps {
   totalFlights: number;
@@ -19,35 +48,33 @@ interface Stamp {
   imageUrl: string;
 }
 
-interface Airport {
-  id: number;
-  ident: string;
-  iata?: string;
-  iso_country?: string;
-  country?: string;
-}
+// Helper: get country from flight lat/lon via airports.json
+const getCountryFromLatLon = (lat: number, lon: number) => {
+  const tolerance = 0.01; // ~1 km tolerance
+  const airport = airportsData.find(
+    (a) => Math.abs(a.latitude - lat) < tolerance && Math.abs(a.longitude - lon) < tolerance
+  );
+  return airport?.iso_country || null;
+};
 
 export function StatsDashboard({ totalFlights, uniqueAirlines, flights }: StatsDashboardProps) {
-  const [airportsMap, setAirportsMap] = useState<Record<string, { id: number; country: string }>>({});
   const [allStamps, setAllStamps] = useState<Stamp[]>([]);
   const [showAchievements, setShowAchievements] = useState(false);
 
-  // Fetch airports
-  useEffect(() => {
-    fetch("/api/airports")
-      .then(res => res.json())
-      .then(data => {
-        const map: Record<string, { id: number; country: string }> = {};
-        data.forEach((a: any) => {
-          if (a.iata) map[a.iata.toUpperCase()] = { id: a.id, country: a.iso_country?.toLowerCase() || "" };
-          if (a.ident) map[a.ident.toUpperCase()] = { id: a.id, country: a.iso_country?.toLowerCase() || "" };
-        });
-        setAirportsMap(map);
-      })
-      .catch(console.error);
-  }, []);
+  // Transform airportsData to AchievementAirport type for AchievementsInline
+  const airportsForAchievements: AchievementAirport[] = useMemo(
+    () =>
+      airportsData.map((a, idx) => ({
+        id: idx + 1,
+        ident: a.iata || a.icao || `AIRPORT_${idx + 1}`,
+        iata: a.iata,
+        iso_country: a.iso_country,
+        country: a.country,
+      })),
+    []
+  );
 
-  // Initialize stamps
+  // Set stamps
   useEffect(() => {
     const isoCountries = ["in","ae","us","gb","th","sg","de","fr","it","ch","br","jp","pt","nl","be","my","va"];
     setAllStamps(
@@ -60,111 +87,139 @@ export function StatsDashboard({ totalFlights, uniqueAirlines, flights }: StatsD
     );
   }, []);
 
-  const uniqueAirportCodes = useMemo(
-    () => new Set(flights.flatMap(f => [f.departure?.toUpperCase(), f.arrival?.toUpperCase()].filter(Boolean))),
-    [flights]
-  );
+  // Compute stats
+  const { uniqueCountries, totalDistance, totalHours, uniqueAirportCodes, visitedAirportIds } = useMemo(() => {
+    const countrySet = new Set<string>();
+    const airportSet = new Set<string>();
+    const visitedIds = new Set<number>();
 
-  const { visitedAirportIds, visitedCountries, totalDistance } = useMemo(() => {
-    const ids = new Set<number>();
-    const countries = new Set<string>();
     let distanceSum = 0;
+    let hoursSum = 0;
 
     for (const f of flights) {
-      const dep = f.departure?.toUpperCase();
-      const arr = f.arrival?.toUpperCase();
+      // departure
+      if (f.departure_latitude && f.departure_longitude) {
+        const c = getCountryFromLatLon(f.departure_latitude, f.departure_longitude);
+        if (c) countrySet.add(c.toUpperCase());
 
-      const depAirport = dep ? airportsMap[dep] : null;
-      const arrAirport = arr ? airportsMap[arr] : null;
+        // find airport ID for Achievements
+        const airport = airportsForAchievements.find(
+          (a) =>
+            (a.iata && a.iata.toUpperCase() === f.departure.toUpperCase()) ||
+            (a.ident && a.ident.toUpperCase() === f.departure.toUpperCase())
+        );
+        if (airport) visitedIds.add(airport.id);
+      }
 
-      if (depAirport) { ids.add(depAirport.id); countries.add(depAirport.country); }
-      if (arrAirport) { ids.add(arrAirport.id); countries.add(arrAirport.country); }
+      // arrival
+      if (f.arrival_latitude && f.arrival_longitude) {
+        const c = getCountryFromLatLon(f.arrival_latitude, f.arrival_longitude);
+        if (c) countrySet.add(c.toUpperCase());
 
+        const airport = airportsForAchievements.find(
+          (a) =>
+            (a.iata && a.iata.toUpperCase() === f.arrival.toUpperCase()) ||
+            (a.ident && a.ident.toUpperCase() === f.arrival.toUpperCase())
+        );
+        if (airport) visitedIds.add(airport.id);
+      }
+
+      // airport codes
+      if (f.departure) airportSet.add(f.departure.toUpperCase());
+      if (f.arrival) airportSet.add(f.arrival.toUpperCase());
+
+      // distance & hours
       if (f.departure_latitude && f.departure_longitude && f.arrival_latitude && f.arrival_longitude) {
-        const R = 6371;
+        const R = 6371; // km
         const dLat = ((f.arrival_latitude - f.departure_latitude) * Math.PI) / 180;
         const dLon = ((f.arrival_longitude - f.departure_longitude) * Math.PI) / 180;
-        const a = Math.sin(dLat / 2) ** 2 +
-                  Math.cos(f.departure_latitude * Math.PI / 180) *
-                  Math.cos(f.arrival_latitude * Math.PI / 180) *
-                  Math.sin(dLon / 2) ** 2;
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos((f.departure_latitude * Math.PI) / 180) *
+          Math.cos((f.arrival_latitude * Math.PI) / 180) *
+          Math.sin(dLon / 2) ** 2;
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        distanceSum += R * c;
+        const dist = R * c;
+        distanceSum += dist;
+        hoursSum += dist / 800;
       }
     }
 
     return {
-      visitedAirportIds: ids,
-      visitedCountries: countries,
+      uniqueCountries: countrySet,
       totalDistance: distanceSum.toFixed(0),
+      totalHours: hoursSum.toFixed(1),
+      uniqueAirportCodes: airportSet,
+      visitedAirportIds: visitedIds,
     };
-  }, [airportsMap, flights]);
-
-  const stats = [
-    { icon: Globe, value: visitedCountries.size, color: "#a855f7" },
-    { icon: Plane, value: totalFlights, color: "#22c55e" },
-    { icon: Ruler, value: totalDistance, color: "#eab308" },
-    { icon: TowerControl, value: uniqueAirportCodes.size, color: "#6366f1" },
-    { icon: Building2, value: uniqueAirlines, color: "#38bdf8" },
-  ];
-
-  const totalSum = stats.reduce((sum, s) => sum + (Number(s.value) || 0), 0);
-  const gradientStops = stats.map((s, i) => {
-    const pct = totalSum > 0
-      ? (stats.slice(0, i + 1).reduce((sum, x) => sum + (Number(x.value) || 0), 0) / totalSum) * 100
-      : 20;
-    return `${s.color} ${pct}%`;
-  });
+  }, [flights, airportsForAchievements]);
 
   const formatNumber = (num: number | string) =>
     isNaN(Number(num)) ? num : new Intl.NumberFormat("en-IN").format(Number(num));
 
-  return (
-    <div className="flex flex-col items-center w-full mb-[1rem] gap-3 px-1 sm:px-4 select-none">
-      {/* Stats Row */}
-      <div className="flex justify-between items-end w-full max-w-4xl">
-        {stats.map(({ icon: Icon, value, color }, idx) => (
-          <div key={idx} className="flex flex-col items-center gap-1 flex-1 text-center">
-            <Icon className="h-9 w-9" style={{ color }} />
-            <span className="text-lg font-semibold text-white">{formatNumber(value)}</span>
-          </div>
-        ))}
-      </div>
+  const statClass =
+    "flex flex-col items-center justify-center gap-1 bg-white/10 backdrop-blur-sm px-6 py-3 rounded-xl text-white shadow-md";
+  const labelClass = "text-xs sm:text-sm opacity-80 font-medium leading-none";
 
-      {/* Gradient Bar */}
-      <div className="relative w-full max-w-4xl h-[7px] rounded-full overflow-hidden mt-3">
+const StatCard = ({
+  icon: Icon,
+  value,
+  label,
+  color,
+}: {
+  icon: any;
+  value: string | number;
+  label: string;
+  color: string;
+}) => (
+  <div className={statClass}>
+    <div className="flex items-center gap-2">
+      <Icon className={`h-9 w-9 ${color}`} />
+      <div className="flex flex-col items-start">
+        <span className="text-2xl sm:text-3xl font-bold">{value}</span>
+        <span className={labelClass}>{label.charAt(0).toUpperCase() + label.slice(1).toLowerCase()}</span>
+      </div>
+    </div>
+  </div>
+);
+
+  return (
+    <div className="flex flex-col items-center w-full mb-6 gap-3 px-2 sm:px-4 select-none">
+      <div className="flex flex-wrap justify-center gap-4 w-full max-w-4xl">
+        <StatCard icon={Ruler} value={`${formatNumber(totalDistance)}`} label="Km's in Distance" color="text-yellow-400" />
+        <StatCard icon={Clock} value={`${formatNumber(totalHours)}`} label="Hours" color="text-orange-400" />
+      </div>
+      <div className="flex flex-wrap justify-center gap-4 w-full max-w-5xl mt-1">
+        <StatCard icon={Globe} value={uniqueCountries.size} label="Countries" color="text-purple-400" />
+        <StatCard icon={Plane} value={formatNumber(totalFlights)} label="Flights" color="text-green-400" />
+        <StatCard icon={TowerControl} value={uniqueAirportCodes.size} label="Airports" color="text-indigo-400" />
+        <StatCard icon={Building2} value={uniqueAirlines} label="Airlines" color="text-sky-400" />
+      </div>
+      <div className="relative w-full max-w-4xl h-[8px] rounded-full overflow-hidden mt-5">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: "100%" }}
-          transition={{ duration: 1.2, ease: "easeOut" }}
+          transition={{ duration: 1.3, ease: "easeOut" }}
           className="absolute top-0 left-0 h-full w-full"
-          style={{ background: `linear-gradient(to right, ${gradientStops.join(", ")})` }}
+          style={{
+            background: "linear-gradient(to right, #a855f7, #22c55e, #eab308, #6366f1, #38bdf8)",
+          }}
         />
       </div>
-
-      {/* Centered Award Icon */}
       <div className="flex justify-center mt-6 w-full max-w-4xl">
         <button
-          onClick={() => setShowAchievements(prev => !prev)}
-          className="flex items-center justify-center w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 transition"
+          onClick={() => setShowAchievements((prev) => !prev)}
+          className="flex items-center justify-center w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 transition shadow-lg"
         >
-          <Award className="w-6 h-6 text-white" />
+          <Award className="w-7 h-7 text-white" />
         </button>
       </div>
-
-      {/* Achievements Inline */}
       {showAchievements && (
-        <div className="mt-4 w-full max-w-4xl">
+        <div className="mt-5 w-full max-w-4xl">
           <AchievementsInline
             allStamps={allStamps}
             visitedAirportIds={visitedAirportIds}
-            airports={Object.entries(airportsMap).map(([code, a]) => ({
-              id: a.id,
-              country: a.country,
-              ident: code,
-              iata: code,
-              iso_country: a.country,
-            }))}
+            airports={airportsForAchievements}
             showStamps={showAchievements}
           />
         </div>
