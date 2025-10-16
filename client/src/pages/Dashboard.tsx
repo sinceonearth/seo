@@ -9,7 +9,7 @@ import TripHistory from "@/pages/TripHistory";
 import Admin from "@/pages/Admin";
 import { apiRequest } from "@/lib/queryClient";
 import type { Flight } from "@shared/schema";
-import AddFlightPage from "@/components/AddFlightModal"; // page-friendly
+import ManualAddFlight from "@/components/ManualAddFlight";
 
 const countryCoordinates: Record<string, { lat: number; lon: number }> = {
   India: { lat: 20.5937, lon: 78.9629 },
@@ -36,9 +36,7 @@ export default function Dashboard() {
   const globeRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 400, height: 400 });
-  const [activeTab, setActiveTab] = useState<
-    "Stats" | "Trips" | "AddFlight" | "Admin"
-  >("Stats");
+  const [activeTab, setActiveTab] = useState<"Stats" | "Trips" | "AddFlight" | "Admin">("Stats");
 
   const { data: flights = [], refetch } = useQuery<Flight[]>({
     queryKey: ["user-flights", token],
@@ -51,7 +49,6 @@ export default function Dashboard() {
     },
   });
 
-  // 🔄 Refetch flights and center globe when Stats tab is selected
   useEffect(() => {
     if (activeTab === "Stats") {
       refetch();
@@ -194,15 +191,19 @@ export default function Dashboard() {
           <StatsDashboard
             flights={flights}
             totalFlights={flights.length}
-            uniqueAirlines={
-              new Set(flights.map((f) => f.airline_name?.trim() || "")).size
-            }
+            uniqueAirlines={new Set(flights.map((f) => f.airline_name?.trim() || "")).size}
           />
         )}
+
         {activeTab === "Trips" && <TripHistory flights={flights} />}
+
         {activeTab === "AddFlight" && user && (
-          <AddFlightPage userId={user.id} isPage />
+          <div className="space-y-6">
+            
+            <ManualAddFlight userId={user.id} />
+          </div>
         )}
+
         {activeTab === "Admin" && user?.is_admin && <Admin />}
       </div>
     </div>
