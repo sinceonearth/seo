@@ -27,7 +27,7 @@ import cookieParser from "cookie-parser";
 // ⚙️ Express App Setup
 // ==================================================
 const app = express();
-app.set("trust proxy", 1);
+app.set("trust proxy", 1);  // Trust the proxy (for HTTPS in production)
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -37,11 +37,11 @@ app.use(express.urlencoded({ extended: false }));
 app.use(
   cors({
     origin: [
-      "http://localhost:5173",      // desktop dev
-      "http://192.168.29.116:5173", // mobile dev
-      "http://localhost:5050",      // browser console
+      "https://sinceonearth.com",     // Production Frontend URL
+      "http://localhost:5173",        // Local Development (Desktop)
+      "http://192.168.29.116:5173",   // Local Development (Mobile)
     ],
-    credentials: true,
+    credentials: true,  // Allow cookies to be sent with requests
   })
 );
 app.use(cookieParser());
@@ -79,26 +79,26 @@ app.use((req, res, next) => {
 const PgStore = connectPg(session);
 
 const sessionStore = new PgStore({
-  conString: process.env.DATABASE_URL,
-  createTableIfMissing: false,
-  ttl: 7 * 24 * 60 * 60, // 7 days
-  tableName: "sessions",
+  conString: process.env.DATABASE_URL,  // PostgreSQL Connection String
+  createTableIfMissing: false,          // Do not create the sessions table automatically
+  ttl: 7 * 24 * 60 * 60,                // Session expiration: 7 days
+  tableName: "sessions",                // Table name for sessions
 });
 
 app.use(
   session({
     store: sessionStore,
-    secret: process.env.SESSION_SECRET!,
-    name: "sessionId",
+    secret: process.env.SESSION_SECRET!,  // Make sure SESSION_SECRET is set in .env
+    name: "sessionId",                    // Session cookie name
     resave: false,
     saveUninitialized: false,
     proxy: true,
     cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: "/",
+      httpOnly: true,                     // Ensures the cookie is not accessible via JavaScript
+      secure: process.env.NODE_ENV === "production",  // Only send cookies over HTTPS in production
+      sameSite: "lax",                    // CSRF protection
+      maxAge: 7 * 24 * 60 * 60 * 1000,     // Cookie expiration: 7 days
+      path: "/",                          // Cookie path
     },
   })
 );
@@ -124,7 +124,7 @@ app.use(
   // ==================================================
   if (app.get("env") === "development") {
     console.log("🚀 Starting Vite in middleware mode...");
-    await setupVite(app, server);
+    await setupVite(app, server);  // Vite will handle hot-reloading and serving assets in dev mode
   } else {
     console.log("📦 Skipping serveStatic — dev mode only");
   }
@@ -132,7 +132,7 @@ app.use(
   // ==================================================
   // 🖥️ Start the Server
   // ==================================================
-  const port = parseInt(process.env.PORT || "5050", 10);
+  const port = parseInt(process.env.PORT || "5050", 10);  // Use process.env.PORT or fallback to 5050
   server.listen(port, "0.0.0.0", () => {
     console.log(`✅ Server running on http://0.0.0.0:${port}`);
   });
