@@ -1,23 +1,3 @@
-#!/usr/bin/env coffee
-
-fs         = require('fs')
-path       = require('path')
-uglify     = require('uglify-js')
-browserify = require('browserify')
-
-BANNER = '''
-/**
- * @fileoverview Text diff library ported from Python's difflib module. 
- *     https://github.com/qiao/difflib.js
- */
-
-'''
-
-build = (dest) ->
-  browserified = browserify.bundle(__dirname + '/../lib/difflib.js')
-  namespaced   = 'var difflib = (function() {' + browserified + 'return require("/difflib");})();'
-  uglified     = uglify(namespaced)
-  bannered     = BANNER + uglified
-  fs.writeFileSync(dest, bannered)
-
-build(__dirname + '/../dist/difflib-browser.js')
+version https://git-lfs.github.com/spec/v1
+oid sha256:16ee8fe98198b62cd861d889a55698d899b49843c4d3e52118f9dd94cffd848b
+size 633

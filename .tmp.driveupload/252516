@@ -1,5 +1,3 @@
-import {
-  require_react
-} from "./chunk-YHPANKLD.js";
-import "./chunk-PR4QN5HX.js";
-export default require_react();
+version https://git-lfs.github.com/spec/v1
+oid sha256:84250d8977ce59ac2501651206bb0b79b8d663a0370ec3cc1b4fca29905dd9e7
+size 117

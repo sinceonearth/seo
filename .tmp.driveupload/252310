@@ -1,34 +1,3 @@
-/* eslint-env browser */
-
-const level = (() => {
-	if (!('navigator' in globalThis)) {
-		return 0;
-	}
-
-	if (globalThis.navigator.userAgentData) {
-		const brand = navigator.userAgentData.brands.find(({brand}) => brand === 'Chromium');
-		if (brand && brand.version > 93) {
-			return 3;
-		}
-	}
-
-	if (/\b(Chrome|Chromium)\//.test(globalThis.navigator.userAgent)) {
-		return 1;
-	}
-
-	return 0;
-})();
-
-const colorSupport = level !== 0 && {
-	level,
-	hasBasic: true,
-	has256: level >= 2,
-	has16m: level >= 3,
-};
-
-const supportsColor = {
-	stdout: colorSupport,
-	stderr: colorSupport,
-};
-
-export default supportsColor;
+version https://git-lfs.github.com/spec/v1
+oid sha256:af136d242c06422a0004775bdf11d9e25a05b1ec54a6932315dc016d22d8b440
+size 607

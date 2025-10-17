@@ -1,16 +1,3 @@
-import {
-  Slot,
-  Slottable,
-  createSlot,
-  createSlottable
-} from "./chunk-FD3PBBKI.js";
-import "./chunk-7CC4PDZ5.js";
-import "./chunk-YHPANKLD.js";
-import "./chunk-PR4QN5HX.js";
-export {
-  Slot as Root,
-  Slot,
-  Slottable,
-  createSlot,
-  createSlottable
-};
+version https://git-lfs.github.com/spec/v1
+oid sha256:db7604e2133cbf3eb4b8c55f3dcdff0ddfe1e6b8293b9f879490619321309c84
+size 263

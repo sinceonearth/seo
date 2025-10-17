@@ -1,7 +1,3 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-const index_js_1 = __importDefault(require("./index.js"));
-module.exports = Object.assign(index_js_1.default, { default: index_js_1.default, minimatch: index_js_1.default });
-//# sourceMappingURL=index-cjs.js.map
+version https://git-lfs.github.com/spec/v1
+oid sha256:7ffd8d84d4a99798dbf6edcaa3857acacbb4517d758054e1d039b45000bc286f
+size 365

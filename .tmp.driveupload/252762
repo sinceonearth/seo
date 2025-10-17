@@ -1,11 +1,3 @@
-# @esbuild-kit/core-utils
-
-Core utility functions used by [@esbuild-kit/cjs-loader](https://github.com/esbuild-kit/cjs-loader) and [@esbuild-kit/esm-loader](https://github.com/esbuild-kit/esm-loader).
-
-## Library
-
-### esbuild
-Transform defaults, caching, and source-map handling.
-
-### Source map support
-Uses [native source-map](https://nodejs.org/api/process.html#processsetsourcemapsenabledval) if available, fallsback to [source-map-support](https://www.npmjs.com/package/source-map-support).
+version https://git-lfs.github.com/spec/v1
+oid sha256:953bf83ec67d7bd778b9b00b15857551eec34c984a227d449dcc387e7cddbb60
+size 496

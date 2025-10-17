@@ -1,10 +1,3 @@
-"use strict";
-
-module.exports = {
-	screen: "\x1b[2J",
-	screenLeft: "\x1b[1J",
-	screenRight: "\x1b[J",
-	line: "\x1b[2K",
-	lineLeft: "\x1b[1K",
-	lineRight: "\x1b[K"
-};
+version https://git-lfs.github.com/spec/v1
+oid sha256:51d58c63a72e9bd2c84171834674609887de8acadb21c750d21105bade8a234c
+size 166

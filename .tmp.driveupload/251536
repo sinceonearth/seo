@@ -1,15 +1,3 @@
-module.exports = {
-  env: {
-    browser: true,
-    es2021: true
-  },
-  extends: [
-    'standard'
-  ],
-  parserOptions: {
-    ecmaVersion: 13,
-    sourceType: 'module'
-  },
-  rules: {
-  }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:e7a83de2cebac0651073fe503653bc70db5e567d40ccf243d3dd028a9d6ea91e
+size 189

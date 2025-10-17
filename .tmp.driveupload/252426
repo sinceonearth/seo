@@ -1,9 +1,3 @@
-import { diffString, diff } from 'json-diff'
-  const patch = diffString(
-    { 
-      services: [],
-    },
-    {
-      services: [{ service_code: '123' }],
-    }
-  );
+version https://git-lfs.github.com/spec/v1
+oid sha256:17a53f47428e83361dfa84977984fd2029aec379c4f4ccc223210dacfa0ce943
+size 167

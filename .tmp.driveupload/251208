@@ -1,23 +1,3 @@
-"use strict";
-
-// store whether supports-color mode is enabled or not.
-var state = null;
-
-// force supports-color mode
-var enableColor = function () { state = true; };
-
-// disable supports-color mode
-var disableColor = function () { state = false; };
-
-// use the NO_COLOR environment variable (default)
-var autoDetectSupport = function () { state = null; };
-
-// determine whether supports-color mode is enabled.
-var isColorSupported = function () { return state === null ? !process.env.NO_COLOR : state; };
-
-module.exports = {
-	enableColor: enableColor,
-	disableColor: disableColor,
-	autoDetectSupport: autoDetectSupport,
-	isColorSupported: isColorSupported
-};
+version https://git-lfs.github.com/spec/v1
+oid sha256:6ff595509abf1619192e3241d53db3c515749ca1ab1e242feb11cb4c327378cf
+size 661

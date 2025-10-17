@@ -1,10 +1,3 @@
-import { defineConfig } from "drizzle-kit";
-
-export default defineConfig({
-  schema: "./shared/schema.ts", // ✅ FIXED PATH
-  out: "./drizzle",
-  dialect: "postgresql", // or "sqlite" if using SQLite
-  dbCredentials: {
-    url: process.env.DATABASE_URL!,
-  },
-});
+version https://git-lfs.github.com/spec/v1
+oid sha256:ccdbabb09b6aa5841579020ef4fc9abcf803d465b2b54213046bc112e24d8063
+size 265

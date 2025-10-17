@@ -1,15 +1,3 @@
-"use strict";
-
-module.exports = function () {
-	// Borrowed from ansi-regex package
-	// https://github.com/chalk/ansi-regex/blob/a28b8e7ee67aa9996ba44bf123f0436eea62d285/index.js
-
-	return new RegExp(
-		"[\\u001B\\u009B][[\\]()#;?]" +
-			"*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]" +
-			"+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)" +
-			"|" +
-			"(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))",
-		"g"
-	);
-};
+version https://git-lfs.github.com/spec/v1
+oid sha256:844a5c70c3de272db11bd33fb03aef48b0140d2d9e424d9668d5c2f08b56081c
+size 431

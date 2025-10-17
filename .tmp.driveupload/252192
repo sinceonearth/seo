@@ -1,17 +1,3 @@
-{
-  "name": "esbuild-darwin-arm64",
-  "version": "0.15.18",
-  "description": "The macOS ARM 64-bit binary for esbuild, a JavaScript bundler.",
-  "repository": "https://github.com/evanw/esbuild",
-  "license": "MIT",
-  "preferUnplugged": true,
-  "engines": {
-    "node": ">=12"
-  },
-  "os": [
-    "darwin"
-  ],
-  "cpu": [
-    "arm64"
-  ]
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:6127c064e0ec1a8a3c57b6dab9ee766b45e72fa3905435d8e6bd18faaf691c6f
+size 338

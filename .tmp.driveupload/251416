@@ -1,12 +1,3 @@
-import { MinimatchOptions } from './index.js';
-/**
- * Escape all magic characters in a glob pattern.
- *
- * If the {@link windowsPathsNoEscape | GlobOptions.windowsPathsNoEscape}
- * option is used, then characters are escaped by wrapping in `[]`, because
- * a magic character wrapped in a character class can only be satisfied by
- * that exact character.  In this mode, `\` is _not_ escaped, because it is
- * not interpreted as a magic character, but instead as a path separator.
- */
-export declare const escape: (s: string, { windowsPathsNoEscape, }?: Pick<MinimatchOptions, 'windowsPathsNoEscape'>) => string;
-//# sourceMappingURL=escape.d.ts.map
+version https://git-lfs.github.com/spec/v1
+oid sha256:b589d625dde2d63aafbe88143e5fbd7b98dd6aca9782747eafb6e88a3f43f8bc
+size 647

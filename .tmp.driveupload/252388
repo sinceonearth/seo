@@ -1,9 +1,3 @@
-"use strict";
-
-/*
- * get actual length of ANSI-formatted string
- */
-
-var strip = require("./strip");
-
-module.exports = function (str) { return strip(str).length; };
+version https://git-lfs.github.com/spec/v1
+oid sha256:ae4972e306982239e088be51bea08824fed7353b7f8e7cefbaa0db0dc337a504
+size 165

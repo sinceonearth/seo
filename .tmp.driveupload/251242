@@ -1,4 +1,3 @@
-language: node_js
-node_js:
-  - "0.12"
-  - "0.10"
+version https://git-lfs.github.com/spec/v1
+oid sha256:e0c0ae0fca2f5e1347a86e87345817695e0019da072a1a199054ba041e3a05c7
+size 49

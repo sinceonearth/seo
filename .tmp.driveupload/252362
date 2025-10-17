@@ -1,8 +1,3 @@
-// Strip ANSI formatting from string
-
-"use strict";
-
-var stringifiable = require("es5-ext/object/validate-stringifiable")
-  , r             = require("./regex-ansi")();
-
-module.exports = function (str) { return stringifiable(str).replace(r, ""); };
+version https://git-lfs.github.com/spec/v1
+oid sha256:b5fbd725424232ab06a546a79b47c0af55dffb56e40ae03cd5d3eeabda6763ba
+size 249

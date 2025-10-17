@@ -1,13 +1,3 @@
-"use strict";
-
-var object        = require("es5-ext/object/valid-object")
-  , stringifiable = require("es5-ext/object/validate-stringifiable-value")
-  , forOf         = require("es6-iterator/for-of");
-
-module.exports = function (text, style) {
-	var result = "";
-	text = stringifiable(text);
-	object(style);
-	forOf(text, function (char) { result += style[char] || char; });
-	return result;
-};
+version https://git-lfs.github.com/spec/v1
+oid sha256:f1fd99f6066fd74b1b19de590b4f0f26f8517b64cef97e5178c3f9f54e77a805
+size 392

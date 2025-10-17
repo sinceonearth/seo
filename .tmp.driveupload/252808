@@ -1,33 +1,3 @@
-{
-  "name": "@esbuild-kit/core-utils",
-  "version": "3.3.2",
-  "publishConfig": {
-    "access": "public"
-  },
-  "license": "MIT",
-  "repository": "esbuild-kit/core-utils",
-  "author": {
-    "name": "Hiroki Osame",
-    "email": "hiroki.osame@gmail.com"
-  },
-  "files": [
-    "dist"
-  ],
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    "types": "./dist/index.d.ts",
-    "default": "./dist/index.js"
-  },
-  "imports": {
-    "#esbuild-kit/core-utils": {
-      "types": "./src/index.ts",
-      "development": "./src/index.ts",
-      "default": "./dist/index.js"
-    }
-  },
-  "dependencies": {
-    "esbuild": "~0.18.20",
-    "source-map-support": "^0.5.21"
-  }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:80f3fe0f8dbd03e69c7c0dbd2029c14aec6bcb9c0dca8db3e27d2d6007474cf3
+size 688
