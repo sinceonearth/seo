@@ -2,12 +2,41 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import type { Flight } from "@shared/schema";
+import { Ruler, Clock } from "lucide-react";
 
 interface TripHistoryProps {
   flights: Flight[];
 }
 
 const PAGE_SIZE = 12;
+
+// Haversine formula to calculate distance in km
+const getDistance = (
+  lat1?: number | null,
+  lon1?: number | null,
+  lat2?: number | null,
+  lon2?: number | null
+): number | null => {
+  if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
+
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+// Format duration in "Xh Ym"
+const formatDuration = (hours: number) => {
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return `${h}h ${m}m`;
+};
 
 export default function TripHistory({ flights }: TripHistoryProps) {
   const [selectedPastTab, setSelectedPastTab] = useState<string>("All");
@@ -43,7 +72,7 @@ export default function TripHistory({ flights }: TripHistoryProps) {
 
   // Auto move flights from upcoming → past after date has passed
   useEffect(() => {
-    const interval = setInterval(async () => {
+    const interval = setInterval(() => {
       const now = new Date();
       const newlyPast: Flight[] = [];
       const stillUpcoming: Flight[] = [];
@@ -51,15 +80,7 @@ export default function TripHistory({ flights }: TripHistoryProps) {
       upcomingFlightsState.forEach((f) => {
         const d = safeParseDate(f.date ?? f.departure_time);
         if (d && d <= now) {
-          // Update status to Landed in UI
           newlyPast.push({ ...f, status: "Landed" });
-
-          // Update status in database
-          fetch(`/api/flights/${f.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "Landed" }),
-          });
         } else stillUpcoming.push(f);
       });
 
@@ -67,7 +88,7 @@ export default function TripHistory({ flights }: TripHistoryProps) {
         setPastFlightsState((prev) => [...prev, ...newlyPast]);
         setUpcomingFlightsState(stillUpcoming);
       }
-    }, 60 * 1000); // check every minute
+    }, 60 * 1000);
 
     return () => clearInterval(interval);
   }, [upcomingFlightsState]);
@@ -96,7 +117,6 @@ export default function TripHistory({ flights }: TripHistoryProps) {
   const handleLoadMorePast = () => setVisiblePastCount((c) => c + PAGE_SIZE);
   const handleLoadMoreUpcoming = () => setVisibleUpcomingCount((c) => c + PAGE_SIZE);
 
-  // Flight card
   const FlightCard = ({
     f,
     showStatus,
@@ -113,33 +133,57 @@ export default function TripHistory({ flights }: TripHistoryProps) {
       ? "bg-green-500 text-black"
       : "bg-red-600 text-white";
 
+    const distanceKm = getDistance(
+      f.departure_latitude,
+      f.departure_longitude,
+      f.arrival_latitude,
+      f.arrival_longitude
+    );
+
+    // Estimated duration in hours based on 800 km/h
+    const durationHours = distanceKm != null ? distanceKm / 800 : null;
+
     return (
-      <div className="p-4 bg-neutral-900 border border-gray-700 rounded-xl hover:shadow-lg transition-shadow">
-        <div className="flex justify-between mb-2 items-center">
+      <div className="p-4 bg-neutral-900 border border-gray-700 rounded-xl hover:shadow-lg transition-shadow flex justify-between">
+        {/* Left side */}
+        <div className="flex flex-col gap-1">
+          {/* Airline + flight number */}
           <div className="font-semibold text-lg text-white">
             {f.airline_name || "Unknown Airline"} {f.flight_number || "N/A"}
           </div>
-          <div className="text-sm flex items-center gap-2">
-            <span className="text-gray-300">{dateStr}</span>
-            {showStatus && f.status && (
-              <span
-                className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 ${statusColor}`}
-              >
-                {isUpcoming && <span className="w-2 h-2 rounded-full animate-pulse bg-white" />}
-                {f.status}
+
+          {/* Departure → Arrival */}
+          <div className="text-sm text-gray-300">
+            {f.departure || "???"} → {f.arrival || "???"}
+          </div>
+
+          {/* Distance & Duration */}
+          <div className="flex gap-2 mt-1 text-xs text-gray-400">
+            {distanceKm && (
+              <span className="flex items-center gap-1">
+                <Ruler size={12} /> {distanceKm.toFixed(1)} kms
+              </span>
+            )}
+            {durationHours && (
+              <span className="flex items-center gap-1">
+                <Clock size={12} /> {formatDuration(durationHours)}
               </span>
             )}
           </div>
         </div>
-        <div className="text-sm text-gray-300 mb-1">
-          {f.departure || "???"} → {f.arrival || "???"}
+
+        {/* Right side */}
+        <div className="flex flex-col items-end text-sm gap-1">
+          <span className="text-gray-300">{dateStr}</span>
+          {showStatus && f.status && (
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 ${statusColor}`}
+            >
+              {isUpcoming && <span className="w-2 h-2 rounded-full animate-pulse bg-white" />}
+              {f.status}
+            </span>
+          )}
         </div>
-        {isUpcoming && f.departure_terminal && (
-          <div className="text-xs text-gray-400">Dep Terminal: {f.departure_terminal}</div>
-        )}
-        {isUpcoming && f.arrival_terminal && (
-          <div className="text-xs text-gray-400">Arr Terminal: {f.arrival_terminal}</div>
-        )}
       </div>
     );
   };
@@ -148,7 +192,9 @@ export default function TripHistory({ flights }: TripHistoryProps) {
     <div className="min-h-screen w-full bg-black text-white flex flex-col relative px-4 md:px-8">
       {/* Upcoming Flights */}
       <div className="mb-6">
-        <div className="text-green-400 text-xl font-semibold mb-3">Upcoming Flights</div>
+        <div className="text-green-400 text-xl font-semibold mb-3">
+          Upcoming Flights
+        </div>
         {upcomingFlightsState.length === 0 ? (
           <div className="text-gray-400 text-center">No upcoming flights</div>
         ) : (

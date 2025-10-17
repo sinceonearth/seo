@@ -104,13 +104,15 @@ export default function Admin() {
           {users?.map((user) => (
             <Card
               key={user.id}
-              className="bg-neutral-900 border border-green-700/40 shadow-lg rounded-2xl p-5 w-full"
+              className="bg-neutral-900 border border-zinc-700/40 shadow-lg rounded-2xl p-5 w-full"
             >
               <div className="flex justify-between items-start">
                 <div>
                   <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                     {user.name}
-                    {user.alien && <span className="text-gray-400 text-sm">({user.alien})</span>}
+                    {user.alien && (
+                      <span className="text-gray-400 text-sm">({user.alien})</span>
+                    )}
                   </h2>
                   <p className="text-sm text-gray-400">@{user.username}</p>
                   <p className="text-sm text-gray-400">{user.email}</p>
@@ -150,8 +152,8 @@ export default function Admin() {
           ))}
         </div>
       ) : (
-        <Card className="bg-neutral-900 border border-green-800/40 shadow-xl rounded-2xl w-full overflow-hidden">
-          <CardHeader className="border-b border-green-800/30 pb-4">
+        <Card className="bg-neutral-900 border border-zinc-700/40 shadow-xl rounded-2xl w-full overflow-hidden">
+          <CardHeader className="border-b border-zinc-700/40 pb-4">
             <CardTitle className="text-green-400 text-xl font-bold">User Registry</CardTitle>
             <CardDescription className="text-gray-400">
               All registered users and their credentials
@@ -159,20 +161,28 @@ export default function Admin() {
           </CardHeader>
           <CardContent>
             <table className="w-full text-sm">
-              <thead className="bg-green-950/30 border-b border-green-800/40">
+              <thead className="bg-green-950/30 border-b border-zinc-700/40">
                 <tr>
                   <th className="py-3 px-4 text-left text-xs text-gray-400 uppercase">Name</th>
                   <th className="py-3 px-4 text-left text-xs text-gray-400 uppercase">Username</th>
                   <th className="py-3 px-4 text-left text-xs text-gray-400 uppercase">Email</th>
-                  <th className="py-3 px-4 text-right text-xs text-gray-400 uppercase">Role / Actions</th>
+                  <th className="py-3 px-4 text-right text-xs text-gray-400 uppercase">
+                    Role / Actions
+                  </th>
                   <th className="py-3 px-4 text-right text-xs text-gray-400 uppercase">Joined</th>
                 </tr>
               </thead>
               <tbody>
                 {users?.map((user) => (
-                  <tr key={user.id} className="border-b border-zinc-800/60 hover:bg-green-950/20 transition-all">
+                  <tr
+                    key={user.id}
+                    className="border-b border-zinc-800/60 hover:bg-green-950/20 transition-all"
+                  >
                     <td className="py-3 px-4 text-white font-medium">
-                      {user.name} {user.alien && <span className="text-gray-400 text-sm">({user.alien})</span>}
+                      {user.name}{" "}
+                      {user.alien && (
+                        <span className="text-gray-400 text-sm">({user.alien})</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-green-400">@{user.username}</td>
                     <td className="py-3 px-4 text-gray-300">{user.email}</td>
@@ -181,7 +191,7 @@ export default function Admin() {
                         <Badge
                           className={`rounded-full px-3 py-1 text-xs font-semibold ${
                             user.is_admin
-                              ? "bg-green-600/20 text-green-300 border border-green-600/40"
+                              ? "bg-green-600/20 text-green-400 border border-green-600/40"
                               : "bg-zinc-800/60 text-gray-300 border border-zinc-700/40"
                           }`}
                         >

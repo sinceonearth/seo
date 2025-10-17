@@ -1,26 +1,27 @@
-
+// ==================================================
+// 🌍 Environment Setup
+// ==================================================
 import dotenv from "dotenv";
 dotenv.config();
 
 process.env.NODE_ENV = process.env.NODE_ENV || "development";
 
 console.log("🔧 Loaded environment:", {
-  hasDatabaseUrl: !!process.env.NEON_DATABASE_URL,
+  hasDatabaseUrl: !!process.env.DATABASE_URL,
   hasSessionSecret: !!process.env.SESSION_SECRET,
   nodeEnv: process.env.NODE_ENV,
 });
 
 // ==================================================
-// 🧱 Import dependencies
+// 🧱 Import Dependencies
 // ==================================================
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { registerRoutes } from "./routes"; // ✅ Register modular routes (includes flights.ts)
+import { registerRoutes } from "./routes";
 import { setupVite } from "./vite";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-
 
 // ==================================================
 // ⚙️ Express App Setup
@@ -29,21 +30,21 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
 // ==================================================
 // 🌐 CORS + Cookies
 // ==================================================
 app.use(
   cors({
     origin: [
-      "http://localhost:5173",      // for desktop dev
-      "http://192.168.29.116:5173", // for iPhone/devices on same WiFi
-      "http://localhost:5050",      // if calling via browser console
+      "http://localhost:5173",      // desktop dev
+      "http://192.168.29.116:5173", // mobile dev
+      "http://localhost:5050",      // browser console
     ],
     credentials: true,
   })
 );
 app.use(cookieParser());
-
 
 // ==================================================
 // 🧾 Request Logging Middleware
@@ -75,9 +76,10 @@ app.use((req, res, next) => {
 // ==================================================
 // 💾 Session Setup
 // ==================================================
-const pgStore = connectPg(session);
-const sessionStore = new pgStore({
-  conString: process.env.NEON_DATABASE_URL,
+const PgStore = connectPg(session);
+
+const sessionStore = new PgStore({
+  conString: process.env.DATABASE_URL,
   createTableIfMissing: false,
   ttl: 7 * 24 * 60 * 60, // 7 days
   tableName: "sessions",
